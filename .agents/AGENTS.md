@@ -1,7 +1,7 @@
 # Project: TaskBarHero-Cheetos
 
 ## Project Overview
-C++ memory reading and offset management utility for IL2Cpp game structures. It is an internal cheat tool interacting
+C++ memory reading and offset management utility for IL2Cpp game structures. It is an internal tool interacting
 with the game's memory using the Win32 API.
 
 ## Tech Stack

@@ -95,7 +95,7 @@ std::string RuneUnlocker::UpgradeAllUnlocked(int32_t addAmount)
   int skippedMax   = 0;
   for (auto& ri : m_runes) {
     if (ri.level > 0) {
-      int maxLevel = 100;  // default safe fallback if not found
+      int maxLevel = 5;  // default safe fallback if not found
       if (m_runeMaxLevels.find(ri.runeKey) != m_runeMaxLevels.end()) {
         maxLevel = m_runeMaxLevels[ri.runeKey];
       }

@@ -45,15 +45,15 @@ struct Il2CppOffsets
   static constexpr int32_t HeroInfoData_HeroNameKey = 0x38;
 
   // vo base class (inherited into vh) — confirmed
-  static constexpr int32_t Vo_StatContainer = 0x10;  // @[wn.<bgkj>k__BackingField] [UNCHANGED]
+  static constexpr int32_t Vo_StatContainer = 0x10;  // @[wn.StatContainerBackingField] [UNCHANGED]
 
   // vh derived class — confirmed
-  static constexpr int32_t Vh_HeroInfoDataRef = 0x30;  // @[wg.bghy] [UNCHANGED]
-  static constexpr int32_t Vh_HeroBackRef     = 0x88;  // @[wg.bgij] [UNCHANGED]
+  static constexpr int32_t Vh_HeroInfoDataRef = 0x30;  // @[wg.HeroInfoDataRef] [UNCHANGED]
+  static constexpr int32_t Vh_HeroBackRef     = 0x88;  // @[wg.HeroBackRef] [UNCHANGED]
 
   // ze stat container - confirmed
-  static constexpr int32_t Ze_StatsDictA = 0x18;  // @[bam.bhat] [UNCHANGED]
-  static constexpr int32_t Ze_StatsDictB = 0x20;  // @[bam.bhau] [UNCHANGED]
+  static constexpr int32_t Ze_StatsDictA = 0x18;  // @[StatContainer.StatsDictA] [UNCHANGED]
+  static constexpr int32_t Ze_StatsDictB = 0x20;  // @[StatContainer.StatsDictB] [UNCHANGED]
 };
 
 // =========================================================================
@@ -64,8 +64,8 @@ struct Il2CppOffsets
 // This is a singleton MonoBehaviour that holds the save data.
 struct SaveManagerOffsets
 {
-  static constexpr int32_t AccountSaveData = 0x20;  // @[bck.bhtn] [UNCHANGED]
-  static constexpr int32_t PlayerSaveData  = 0x28;  // @[bck.bhto] [UNCHANGED]
+  static constexpr int32_t AccountSaveData = 0x20;  // @[SaveManager.AccountSaveData] [UNCHANGED]
+  static constexpr int32_t PlayerSaveData  = 0x28;  // @[SaveManager.PlayerSaveData] [UNCHANGED]
 };
 
 // PlayerSaveData (TypeDefIndex: 844)
@@ -129,7 +129,7 @@ struct StageManagerOffsets
   static constexpr int32_t HeroList = 0x30;   // @[StageManager.HeroList] [UNCHANGED]
   static constexpr int32_t OnGetBox = 0x110;  // @[StageManager.OnGetBox] [UNCHANGED]
   static constexpr int32_t ChestDropDict =
-    0x150;  // @[StageManager.bepc] [UNCHANGED] Dictionary<ValueTuple<EBoxType,EContentType>,float>
+    0x150;  // @[StageManager.ChestDropDict] [UNCHANGED] Dictionary<ValueTuple<EBoxType,EContentType>,float>
 };
 
 // EBoxType values (TypeDefIndex: 1006)

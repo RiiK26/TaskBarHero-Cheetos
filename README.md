@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20-green)](#)
 [![Game Version](https://img.shields.io/badge/Tested%20on-latest%20game%20version-orange)](#)
-[![Latest Version](https://img.shields.io/badge/latest-1.2.2-blue)](#)
+[![Latest Version](https://img.shields.io/badge/latest-1.2.3-blue)](#)
 
 An internal cheat tool for **TaskBarHero** that working directly into the memory.
 

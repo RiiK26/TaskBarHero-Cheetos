@@ -174,7 +174,7 @@ std::optional<PlayerDataResult> PlayerDataFinder::Find()
 
                 for (size_t i = Il2CppDictOffsets::Count; reg.RegionSize >= 0x30 && i < reg.RegionSize - 0x30; i += 4) {
                   int32_t val = *reinterpret_cast<int32_t*>(&buffer[i]);
-                  if (val >= 200 && val <= 250) {
+                  if (val >= 200 && val <= 260) {
                     size_t dictOffset = i - Il2CppDictOffsets::Count;
 
                     int32_t freeCount = *reinterpret_cast<int32_t*>(&buffer[dictOffset + Il2CppDictOffsets::FreeCount]);

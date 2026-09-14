@@ -51,7 +51,9 @@ def main():
     # Step 2: Scan dump.cs
     current_class = None
     last_rva = None
+    last_rva_line = None
     last_float_offset = None
+    found_dict_a = False
 
     class_def_re = re.compile(
         r"^\s*(?:public|private|protected|internal)?\s*(?:sealed|abstract|static)?\s*(?:class|struct)\s+([^:\s]+)"
@@ -86,15 +88,55 @@ def main():
                         if last_float_offset and ("Monster", "ExpHeuristic") in needed_offsets:
                             needed_offsets[("Monster", "ExpHeuristic")] = last_float_offset
 
+                    # Heuristic for StatContainer (formerly bam/bat)
+                    if "Dictionary<StatType, float>" in line:
+                        if not found_dict_a:
+                            if ("StatContainer", "StatsDictA") in needed_offsets:
+                                needed_offsets[("StatContainer", "StatsDictA")] = offset
+                            found_dict_a = True
+                        else:
+                            if ("StatContainer", "StatsDictB") in needed_offsets:
+                                needed_offsets[("StatContainer", "StatsDictB")] = offset
+
+                    # Heuristic for SaveManager (AccountSaveData / PlayerSaveData)
+                    if "AccountSaveData " in line:
+                        if ("SaveManager", "AccountSaveData") in needed_offsets:
+                            needed_offsets[("SaveManager", "AccountSaveData")] = offset
+                    if "PlayerSaveData " in line:
+                        if ("SaveManager", "PlayerSaveData") in needed_offsets:
+                            needed_offsets[("SaveManager", "PlayerSaveData")] = offset
+
+                    # Heuristic for StageManager.ChestDropDict
+                    if "Dictionary<ValueTuple<EBoxType, EContentType>, float>" in line and current_class == "StageManager":
+                        if ("StageManager", "ChestDropDict") in needed_offsets:
+                            needed_offsets[("StageManager", "ChestDropDict")] = offset
+
+                    # Heuristic for wg (HeroRef)
+                    if current_class == "wg":
+                        if "HeroInfoData " in line:
+                            if ("wg", "HeroInfoDataRef") in needed_offsets:
+                                needed_offsets[("wg", "HeroInfoDataRef")] = offset
+                        if "Hero " in line:
+                            if ("wg", "HeroBackRef") in needed_offsets:
+                                needed_offsets[("wg", "HeroBackRef")] = offset
+
+                    # Heuristic for wn (StatContainer k__BackingField)
+                    if current_class == "wn":
+                        if "k__BackingField" in line:
+                            if ("wn", "StatContainerBackingField") in needed_offsets:
+                                needed_offsets[("wn", "StatContainerBackingField")] = offset
+
                     if (current_class, fname) in needed_offsets:
                         needed_offsets[(current_class, fname)] = offset
                     last_rva = None
+                    last_rva_line = None
                     continue
 
                 # Check for RVA comment
                 r_match = rva_comment_re.search(line)
                 if r_match:
                     last_rva = r_match.group(1)
+                    last_rva_line = line
                     continue
 
                 # Check for method if we have an RVA
@@ -106,7 +148,14 @@ def main():
                             # If a class has multiple overloads, take the first one found.
                             if needed_rvas[(current_class, mname)] is None:
                                 needed_rvas[(current_class, mname)] = last_rva
+
+                        # Heuristic for DetectorCore
+                        if current_class in ["InjectionDetector", "SpeedHackDetector", "TimeCheatingDetector", "ObscuredCheatingDetector", "WallHackDetector"]:
+                            if last_rva_line and "Slot: 18" in last_rva_line:
+                                if (current_class, "DetectorCore") in needed_rvas:
+                                    needed_rvas[(current_class, "DetectorCore")] = last_rva
                     last_rva = None
+                    last_rva_line = None
 
     # Step 3: Verify missing
     missing = False

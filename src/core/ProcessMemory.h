@@ -187,7 +187,7 @@ public:
   }
 
   HANDLE Handle() const { return m_handle; }
-  DWORD  Pid() const { return m_pid; }
+  DWORD Pid() const { return m_pid; }
 
   // Base address of the main module (useful for RVA-relative pattern hits).
   std::optional<uintptr_t> MainModuleBase() const

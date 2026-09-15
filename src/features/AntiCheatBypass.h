@@ -29,8 +29,8 @@ public:
     if (!modInfo)
       return "[AntiCheat] GameAssembly.dll not found. Is the game running?";
 
-    uintptr_t gaBase   = modInfo->base;
-    m_gameAssemblyBase = gaBase;
+    uintptr_t gaBase       = modInfo->base;
+    m_gameAssemblyBase     = gaBase;
 
     int         patchCount = 0;
     std::string details;

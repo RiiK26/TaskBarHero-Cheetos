@@ -242,8 +242,8 @@ VOID WINAPI hkGetSystemTimeAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
   CheckSpeedChange();
 
   ULARGE_INTEGER uli;
-  uli.LowPart  = lpSystemTimeAsFileTime->dwLowDateTime;
-  uli.HighPart = lpSystemTimeAsFileTime->dwHighDateTime;
+  uli.LowPart    = lpSystemTimeAsFileTime->dwLowDateTime;
+  uli.HighPart   = lpSystemTimeAsFileTime->dwHighDateTime;
 
   LONGLONG delta = (LONGLONG) (uli.QuadPart - g_Anchors.ftReal);
   if (delta < 0) {
@@ -270,8 +270,8 @@ VOID WINAPI hkGetSystemTimePreciseAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
   CheckSpeedChange();
 
   ULARGE_INTEGER uli;
-  uli.LowPart  = lpSystemTimeAsFileTime->dwLowDateTime;
-  uli.HighPart = lpSystemTimeAsFileTime->dwHighDateTime;
+  uli.LowPart    = lpSystemTimeAsFileTime->dwLowDateTime;
+  uli.HighPart   = lpSystemTimeAsFileTime->dwHighDateTime;
 
   LONGLONG delta = (LONGLONG) (uli.QuadPart - g_Anchors.ftReal);
   if (delta < 0) {

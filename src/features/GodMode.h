@@ -61,7 +61,7 @@ public:
 
         float valToWrite = (i < customValues.size()) ? customValues[i] : target.cheatValue;
 
-        auto it = hr.stats.find(target.type);
+        auto it          = hr.stats.find(target.type);
         if (it != hr.stats.end()) {
           if (m_mem.WriteFloat(it->second.address, valToWrite)) {
             writeCount++;

@@ -43,7 +43,7 @@ public:
     auto countOpt = GetCount(dictPtr);
     if (!countOpt || *countOpt <= 0 || *countOpt > 10000)
       return result;
-    int32_t count = *countOpt;
+    int32_t count        = *countOpt;
 
     auto entriesArrayPtr = m_mem.ReadPointer(dictPtr + 0x18);
     if (!entriesArrayPtr || *entriesArrayPtr == 0)
@@ -64,7 +64,7 @@ public:
     for (int32_t i = 0; i < itemsToRead; i++) {
       uintptr_t entryAddr = firstElementAddr + (i * entrySize);
 
-      auto hashCode = m_mem.ReadInt32(entryAddr + 0x00);
+      auto hashCode       = m_mem.ReadInt32(entryAddr + 0x00);
       if (!hashCode || *hashCode < 0)
         continue;  // Invalid or empty entry
 

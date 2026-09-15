@@ -53,7 +53,7 @@ public:
     if (pattern.empty())
       return hits;
 
-    auto regions = m_mem.EnumerateRegions(requireWritable);
+    auto regions         = m_mem.EnumerateRegions(requireWritable);
 
     size_t maxRegionSize = 0;
     for (const auto& mbi : regions) {
@@ -100,7 +100,7 @@ public:
     std::vector<uintptr_t> hits;
     auto                   regions = m_mem.EnumerateRegions(true);
 
-    size_t maxRegionSize = 0;
+    size_t maxRegionSize           = 0;
     for (const auto& mbi : regions) {
       if (mbi.RegionSize > maxRegionSize && mbi.RegionSize <= (256ull * 1024 * 1024))
         maxRegionSize = mbi.RegionSize;
@@ -155,7 +155,7 @@ public:
     std::vector<uintptr_t> hits;
     auto                   regions = m_mem.EnumerateRegions(true);
 
-    size_t maxRegionSize = 0;
+    size_t maxRegionSize           = 0;
     for (const auto& mbi : regions) {
       if (mbi.RegionSize > maxRegionSize && mbi.RegionSize <= (256ull * 1024 * 1024))
         maxRegionSize = mbi.RegionSize;

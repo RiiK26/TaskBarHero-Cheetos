@@ -54,7 +54,7 @@ std::optional<PlayerDataResult> PlayerDataFinder::Find()
     for (auto addr : hits) {
       uintptr_t objBase = addr - HeroSaveDataOffsets::HeroKey;
 
-      auto level = m_mem.ReadInt32(objBase + HeroSaveDataOffsets::HeroLevel);
+      auto level        = m_mem.ReadInt32(objBase + HeroSaveDataOffsets::HeroLevel);
       if (!level || *level < 1 || *level > 9999999)
         continue;
 
@@ -110,7 +110,7 @@ std::optional<PlayerDataResult> PlayerDataFinder::Find()
           for (auto listCandAddr : arrPtrHits) {
             uintptr_t listBase = listCandAddr - Il2CppListOffsets::Items;
 
-            auto listSize = m_mem.ReadInt32(listBase + Il2CppListOffsets::Size);
+            auto listSize      = m_mem.ReadInt32(listBase + Il2CppListOffsets::Size);
             if (!listSize || *listSize < 1 || *listSize > 1000)
               continue;
 
@@ -149,8 +149,8 @@ std::optional<PlayerDataResult> PlayerDataFinder::Find()
 
               printf("  [Debug] SUCCESS! Found active PlayerSaveData @ 0x%llX\n", (unsigned long long) psdBase);
 
-              auto regions   = m_mem.EnumerateRegions(true);
-              bool foundDict = false;
+              auto regions         = m_mem.EnumerateRegions(true);
+              bool foundDict       = false;
 
               size_t maxRegionSize = 0;
               for (const auto& reg : regions) {
@@ -336,12 +336,12 @@ std::vector<CurrencyInfo> PlayerDataFinder::ReadCurrencies(uintptr_t currencyLis
 
   for (auto elemAddr : elements) {
     CurrencyInfo ci;
-    ci.addr = elemAddr;
+    ci.addr  = elemAddr;
 
     auto key = m_mem.ReadInt32(elemAddr + CurrencySaveDataOffsets::Key);
     if (!key)
       continue;
-    ci.key = *key;
+    ci.key   = *key;
 
     auto qty = m_mem.ReadInt64(elemAddr + CurrencySaveDataOffsets::Quantity);
     if (!qty)
@@ -360,7 +360,7 @@ std::vector<HeroSaveInfo> PlayerDataFinder::ReadHeroes(uintptr_t heroListAddr)
 
   for (auto elemAddr : elements) {
     HeroSaveInfo hi;
-    hi.addr = elemAddr;
+    hi.addr  = elemAddr;
 
     auto key = m_mem.ReadInt32(elemAddr + HeroSaveDataOffsets::HeroKey);
     if (!key)
@@ -391,7 +391,7 @@ std::vector<RuneSaveInfo> PlayerDataFinder::ReadRunes(uintptr_t runeListAddr)
 
   for (auto elemAddr : elements) {
     RuneSaveInfo ri;
-    ri.addr = elemAddr;
+    ri.addr  = elemAddr;
 
     auto key = m_mem.ReadInt32(elemAddr + RuneSaveDataOffsets::RuneKey);
     if (!key)

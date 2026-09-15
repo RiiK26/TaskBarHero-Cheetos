@@ -56,7 +56,7 @@ public:
     for (int32_t i = 0; i < *length; i++) {
       uintptr_t entryAddr = *entriesPtr + ArrayDataOffset + (i * EntrySize);
 
-      auto key = m_mem.ReadInt32(entryAddr + EntryKeyOffset);
+      auto key            = m_mem.ReadInt32(entryAddr + EntryKeyOffset);
       if (!key)
         continue;
 

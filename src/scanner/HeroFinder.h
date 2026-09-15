@@ -54,7 +54,7 @@ public:
       for (auto matchAddr : hits) {
         uintptr_t heroInfoBase = matchAddr - 0x28;
 
-        auto strPtr = m_mem.ReadPointer(heroInfoBase + Il2CppOffsets::HeroInfoData_HeroNameKey);
+        auto strPtr            = m_mem.ReadPointer(heroInfoBase + Il2CppOffsets::HeroInfoData_HeroNameKey);
         if (!strPtr || *strPtr == 0)
           continue;
 
@@ -88,7 +88,7 @@ public:
         // ---- Phase 4: read one of the two stat dictionaries ----
         int32_t dictFieldOffset = useStatsDictB ? Il2CppOffsets::Ze_StatsDictB : Il2CppOffsets::Ze_StatsDictA;
 
-        auto dictPtr = m_mem.ReadPointer(*zePtr + dictFieldOffset);
+        auto dictPtr            = m_mem.ReadPointer(*zePtr + dictFieldOffset);
         if (!dictPtr || *dictPtr == 0)
           continue;
 
@@ -99,8 +99,8 @@ public:
         hr.vhInstanceAddr   = vhBase;
         hr.zeInstanceAddr   = *zePtr;
 
-        hr.statsDictAddr = *dictPtr;
-        hr.stats         = m_statDict.ReadAll(*dictPtr);
+        hr.statsDictAddr    = *dictPtr;
+        hr.stats            = m_statDict.ReadAll(*dictPtr);
 
         if (hr.stats.empty())
           continue;

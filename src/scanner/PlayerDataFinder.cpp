@@ -175,7 +175,8 @@ std::optional<PlayerDataResult> PlayerDataFinder::Find()
                 for (size_t i = Il2CppDictOffsets::Count; reg.RegionSize >= 0x30 && i < reg.RegionSize - 0x30; i += 4) {
                   int32_t val = *reinterpret_cast<int32_t*>(&buffer[i]);
                   // Total runes history during update: 197 -> 241 -> 248
-                  if (val >= 225 && val <= 250) {
+                  // make it between range even knowing the exact nodes
+                  if (val >= 225 && val <= 260) {
                     size_t dictOffset = i - Il2CppDictOffsets::Count;
 
                     int32_t freeCount = *reinterpret_cast<int32_t*>(&buffer[dictOffset + Il2CppDictOffsets::FreeCount]);
@@ -266,124 +267,6 @@ std::optional<PlayerDataResult> PlayerDataFinder::Find()
   return std::nullopt;
 }
 
-std::vector<uintptr_t> PlayerDataFinder::FindCurrencySaveDatas(int32_t currencyKey)
-{
-  std::vector<uintptr_t> results;
-  uint8_t*               kb = (uint8_t*) &currencyKey;
-
-  // Pattern: Key (4 bytes), padding (4 bytes)
-  char pattern[32];
-  snprintf(pattern, sizeof(pattern), "%02X %02X %02X %02X 00 00 00 00", kb[0], kb[1], kb[2], kb[3]);
-
-  auto hits = m_scanner.Scan(pattern, true);
-  for (auto addr : hits) {
-    uintptr_t objBase = addr - CurrencySaveDataOffsets::Key;  // offset of Key
-    // Validate vtable
-    auto vtable = m_mem.ReadPointer(objBase);
-    if (!vtable || *vtable < 0x10000)
-      continue;
-
-    results.push_back(objBase);
-  }
-  return results;
-}
-
-std::vector<uintptr_t> PlayerDataFinder::FindObscuredLongByValue(int64_t exactValue)
-{
-  std::vector<uintptr_t> results;
-  if (exactValue <= 1000)
-    return results;  // too low, will match random garbage
-
-  auto                 regions = m_mem.EnumerateRegions(false);
-  std::vector<uint8_t> buffer;
-
-  for (const auto& r : regions) {
-    buffer.resize(r.RegionSize);
-    if (m_mem.ReadBytes((uintptr_t) r.BaseAddress, buffer.data(), r.RegionSize)) {
-      // Iterate in 8-byte steps (alignment of int64_t)
-      for (size_t i = 0; i <= r.RegionSize - 16; i += 8) {
-        int64_t hidden;
-        int64_t key;
-        memcpy(&hidden, &buffer[i], sizeof(int64_t));
-        memcpy(&key, &buffer[i + 8], sizeof(int64_t));
-
-        if ((hidden ^ key) == exactValue) {
-          // i is the offset of 'hidden'
-          // ObscuredLong starts at i - 8 (because hash is at 0, hidden is at 8)
-          if (i >= 8) {
-            uintptr_t baseAddr = (uintptr_t) r.BaseAddress + i - 8;
-            int32_t   hash;
-            memcpy(&hash, &buffer[i - 8], sizeof(int32_t));
-
-            // Compute expected hash to ensure this is actually an ObscuredLong
-            // Hash logic: (int)(value ^ (value >> 32))
-            int32_t expectedHash = (int32_t) (exactValue ^ (exactValue >> 32));
-            if (hash == expectedHash) {
-              results.push_back(baseAddr);
-            }
-          }
-        }
-      }
-    }
-  }
-  return results;
-}
-
-std::vector<CurrencyInfo> PlayerDataFinder::ReadCurrencies(uintptr_t currencyListAddr)
-{
-  std::vector<CurrencyInfo> result;
-  auto                      elements = m_listReader.ReadElementPointers(currencyListAddr);
-
-  for (auto elemAddr : elements) {
-    CurrencyInfo ci;
-    ci.addr  = elemAddr;
-
-    auto key = m_mem.ReadInt32(elemAddr + CurrencySaveDataOffsets::Key);
-    if (!key)
-      continue;
-    ci.key   = *key;
-
-    auto qty = m_mem.ReadInt64(elemAddr + CurrencySaveDataOffsets::Quantity);
-    if (!qty)
-      continue;
-    ci.quantity = *qty;
-
-    result.push_back(ci);
-  }
-  return result;
-}
-
-std::vector<HeroSaveInfo> PlayerDataFinder::ReadHeroes(uintptr_t heroListAddr)
-{
-  std::vector<HeroSaveInfo> result;
-  auto                      elements = m_listReader.ReadElementPointers(heroListAddr);
-
-  for (auto elemAddr : elements) {
-    HeroSaveInfo hi;
-    hi.addr  = elemAddr;
-
-    auto key = m_mem.ReadInt32(elemAddr + HeroSaveDataOffsets::HeroKey);
-    if (!key)
-      continue;
-    hi.heroKey = *key;
-
-    auto level = m_mem.ReadInt32(elemAddr + HeroSaveDataOffsets::HeroLevel);
-    if (level)
-      hi.level = *level;
-
-    auto unlocked = m_mem.ReadBool(elemAddr + HeroSaveDataOffsets::IsUnLock);
-    if (unlocked)
-      hi.unlocked = *unlocked;
-
-    auto exp = m_mem.ReadDouble(elemAddr + HeroSaveDataOffsets::HeroExp);
-    if (exp)
-      hi.exp = *exp;
-
-    result.push_back(hi);
-  }
-  return result;
-}
-
 std::vector<RuneSaveInfo> PlayerDataFinder::ReadRunes(uintptr_t runeListAddr)
 {
   std::vector<RuneSaveInfo> result;
@@ -405,29 +288,4 @@ std::vector<RuneSaveInfo> PlayerDataFinder::ReadRunes(uintptr_t runeListAddr)
     result.push_back(ri);
   }
   return result;
-}
-
-void PlayerDataFinder::WriteObscuredInt(uintptr_t addr, int32_t value)
-{
-  auto currentCryptoKey = m_mem.ReadInt32(addr + 8);
-  if (!currentCryptoKey)
-    return;
-
-  int32_t hiddenValue = *currentCryptoKey ^ value;
-  m_mem.WriteInt32(addr + 4, hiddenValue);
-  m_mem.WriteInt32(addr + 0xC, value);  // fakeValue
-}
-
-void PlayerDataFinder::WriteObscuredFloat(uintptr_t addr, float value)
-{
-  auto currentCryptoKey = m_mem.ReadInt32(addr + 8);
-  if (!currentCryptoKey)
-    return;
-
-  int32_t floatBits;
-  memcpy(&floatBits, &value, 4);
-
-  int32_t hiddenValue = floatBits ^ *currentCryptoKey;
-  m_mem.WriteInt32(addr + 4, hiddenValue);
-  m_mem.WriteFloat(addr + 0xC, value);  // fakeValue
 }

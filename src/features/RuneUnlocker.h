@@ -15,10 +15,6 @@ public:
   }
 
   void SetRuneListAddr(uintptr_t addr) { m_runeListAddr = addr; }
-  bool HasRuneList() const { return m_runeListAddr != 0; }
-
-  // Show current rune status
-  std::string DumpRunes(PlayerDataFinder& finder);
 
   const std::vector<RuneSaveInfo>& ScanRunes(PlayerDataFinder& finder, const std::map<int, int>& maxLevels);
 

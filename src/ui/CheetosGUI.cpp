@@ -215,7 +215,7 @@ void CheetosGUI::DrawUI()
     std::vector<float> valuesToApply = m_statValues;
 
     std::thread([this, valuesToApply]() {
-      // Save original stats BEFORE applying god mode (for 3003 fix)
+      // Save original stats BEFORE applying god mode
       if (!m_godModeActive) {
         SaveOriginalStats();
       }

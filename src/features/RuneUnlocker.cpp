@@ -2,33 +2,6 @@
 #include <map>
 #include <string>
 
-std::string RuneUnlocker::DumpRunes(PlayerDataFinder& finder)
-{
-  if (m_runeListAddr == 0)
-    return "[Runes] Rune list not found.";
-
-  m_runes = finder.ReadRunes(m_runeListAddr);
-
-  if (m_runes.empty())
-    return "[Runes] No runes found in save data. (Rune tree may not be initialized yet)";
-
-  int locked   = 0;
-  int unlocked = 0;
-  int maxLevel = 0;
-
-  for (const auto& ri : m_runes) {
-    if (ri.level == 0)
-      locked++;
-    else
-      unlocked++;
-    if (ri.level > maxLevel)
-      maxLevel = ri.level;
-  }
-
-  return "[Runes] Total: " + std::to_string(m_runes.size()) + " | Unlocked: " + std::to_string(unlocked)
-       + " | Locked: " + std::to_string(locked) + " | Max Level seen: " + std::to_string(maxLevel);
-}
-
 const std::vector<RuneSaveInfo>& RuneUnlocker::ScanRunes(PlayerDataFinder& finder, const std::map<int, int>& maxLevels)
 {
   if (m_runeListAddr != 0) {

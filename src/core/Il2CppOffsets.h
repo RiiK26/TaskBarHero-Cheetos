@@ -128,8 +128,6 @@ struct StageManagerOffsets
 {
   static constexpr int32_t HeroList = 0x30;   // @[StageManager.HeroList] [UNCHANGED]
   static constexpr int32_t OnGetBox = 0x110;  // @[StageManager.OnGetBox] [UNCHANGED]
-  static constexpr int32_t ChestDropDict =
-    0x150;  // @[StageManager.ChestDropDict] [UNCHANGED] Dictionary<ValueTuple<EBoxType,EContentType>,float>
 };
 
 // EBoxType values (TypeDefIndex: 1006)

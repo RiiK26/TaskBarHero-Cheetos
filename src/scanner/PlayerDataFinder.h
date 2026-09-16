@@ -17,22 +17,6 @@ struct PlayerDataResult
   std::map<int, int> runeMaxLevels;
 };
 
-struct CurrencyInfo
-{
-  uintptr_t addr     = 0;  // Address of the CurrencySaveData instance
-  int32_t   key      = 0;
-  int64_t   quantity = 0;
-};
-
-struct HeroSaveInfo
-{
-  uintptr_t addr     = 0;
-  int32_t   heroKey  = 0;
-  int32_t   level    = 0;
-  bool      unlocked = false;
-  double    exp      = 0.0;
-};
-
 struct RuneSaveInfo
 {
   uintptr_t addr    = 0;
@@ -54,25 +38,6 @@ public:
   std::optional<PlayerDataResult> Find();
 
   void ClearCache() { m_hasCache = false; }
-
-  // Find ALL CurrencySaveData instances for a specific key
-  std::vector<uintptr_t> FindCurrencySaveDatas(int32_t currencyKey);
-
-  // Bruteforce search for an ObscuredLong by its exact decrypted value
-  std::vector<uintptr_t> FindObscuredLongByValue(int64_t exactValue);
-
-  // Bruteforce search for all memory locations containing the exact Exp and Level
-  // Helper methods to write obscured types
-  void WriteObscuredInt(uintptr_t addr, int32_t value);
-  void WriteObscuredFloat(uintptr_t addr, float value);
-
-  // ---------------------------------------------------------------------------
-  // Hero Scanner
-  // ---------------------------------------------------------------------------
-
-  std::vector<CurrencyInfo> ReadCurrencies(uintptr_t currencyListAddr);
-
-  std::vector<HeroSaveInfo> ReadHeroes(uintptr_t heroListAddr);
 
   std::vector<RuneSaveInfo> ReadRunes(uintptr_t runeListAddr);
 

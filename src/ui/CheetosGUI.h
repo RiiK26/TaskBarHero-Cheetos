@@ -48,9 +48,6 @@ private:
   void SetSpeedhack(float speed);
   void SetSpeedhackEnable(bool enable);
 
-  void DisableGodMode();
-  void UnlockAllRunes();
-
   void SaveOriginalStats();
   void RestoreOriginalStats();
 
@@ -66,14 +63,12 @@ private:
   std::map<int, int> m_runeMaxLevels;
 
   // Runes State
-  bool              m_hasUnlockedRunes = false;
   std::atomic<bool> m_isRuneScanning{false};
 
   // UI State
   float             m_expMultiplierValue = 99999.0f;
   bool              m_speedhackEnabled   = false;
   float             m_speedValue         = 1.0f;
-  bool              m_enableGodMode      = false;
   std::atomic<bool> m_isScanning{false};
 
   std::vector<uint8_t> m_statStates;

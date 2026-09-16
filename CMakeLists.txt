@@ -82,10 +82,10 @@ configure_file(
 # --- CPack Configuration for Release Packaging ---
 include(InstallRequiredSystemLibraries)
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/license")
-set(CPACK_PACKAGE_VERSION_MAJOR "2")
-set(CPACK_PACKAGE_VERSION_MINOR "0")
-set(CPACK_PACKAGE_VERSION_PATCH "0")
-set(CPACK_PACKAGE_FILE_NAME "TBH-Cheetos-Release")
+set(CPACK_PACKAGE_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
+set(CPACK_PACKAGE_VERSION_MINOR "${PROJECT_VERSION_MINOR}")
+set(CPACK_PACKAGE_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
+set(CPACK_PACKAGE_FILE_NAME "TBH-Cheetos-v${PROJECT_VERSION}")
 set(CPACK_GENERATOR "ZIP")
 
 # Install instructions (CPack uses these to know what to zip)

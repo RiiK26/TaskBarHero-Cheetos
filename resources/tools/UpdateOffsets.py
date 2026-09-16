@@ -106,11 +106,6 @@ def main():
                         if ("SaveManager", "PlayerSaveData") in needed_offsets:
                             needed_offsets[("SaveManager", "PlayerSaveData")] = offset
 
-                    # Heuristic for StageManager.ChestDropDict
-                    if "Dictionary<ValueTuple<EBoxType, EContentType>, float>" in line and current_class == "StageManager":
-                        if ("StageManager", "ChestDropDict") in needed_offsets:
-                            needed_offsets[("StageManager", "ChestDropDict")] = offset
-
                     # Heuristic for wg (HeroRef)
                     if current_class == "wg":
                         if "HeroInfoData " in line:
@@ -158,23 +153,28 @@ def main():
                     last_rva_line = None
 
     # Step 3: Verify missing
-    missing = False
+    missing_count = 0
+    found_count = 0
     for (cls, fld), off in needed_offsets.items():
         if off is None:
             print(f"  [!] Missing field offset for {cls}.{fld}")
-            missing = True
+            missing_count += 1
         else:
             print(f"  [+] Field {cls}.{fld} -> {off}")
+            found_count += 1
 
     for (cls, mth), rva in needed_rvas.items():
         if rva is None:
             print(f"  [!] Missing RVA for {cls}.{mth}")
-            missing = True
+            missing_count += 1
         else:
             print(f"  [+] RVA {cls}.{mth} -> {rva}")
+            found_count += 1
 
-    if missing:
-        print("[-] Not all offsets/RVAs were found. Make sure names match exactly.")
+    if missing_count > 0:
+        print(f"[-] Not all offsets/RVAs were found ({missing_count} missing). Make sure names match exactly.")
+    else:
+        print("[+] All offsets and RVAs were found successfully!")
 
     # Step 4: Patch headers
     print("[*] Updating header files...")
@@ -190,7 +190,11 @@ def main():
         r"(?: \[(?:CHANGED|UNCHANGED)\])?"
     )
 
+    changed_count = 0
+    unchanged_count = 0
+
     def field_replacer(match):
+        nonlocal changed_count, unchanged_count
         prefix = match.group(1)
         old_hex = match.group(2)
         suffix = match.group(3)
@@ -198,11 +202,17 @@ def main():
         if m:
             new_hex = needed_offsets.get((m.group(1), m.group(2)))
             if new_hex:
-                status = "CHANGED" if old_hex.lower() != new_hex.lower() else "UNCHANGED"
+                if old_hex.lower() != new_hex.lower():
+                    status = "CHANGED"
+                    changed_count += 1
+                else:
+                    status = "UNCHANGED"
+                    unchanged_count += 1
                 return f"{prefix}{new_hex}{suffix} [{status}]"
         return match.group(0)
 
     def rva_replacer(match):
+        nonlocal changed_count, unchanged_count
         prefix = match.group(1)
         old_hex = match.group(2)
         suffix = match.group(3)
@@ -210,7 +220,12 @@ def main():
         if m:
             new_hex = needed_rvas.get((m.group(1), m.group(2)))
             if new_hex:
-                status = "CHANGED" if old_hex.lower() != new_hex.lower() else "UNCHANGED"
+                if old_hex.lower() != new_hex.lower():
+                    status = "CHANGED"
+                    changed_count += 1
+                else:
+                    status = "UNCHANGED"
+                    unchanged_count += 1
                 return f"{prefix}{new_hex}{suffix} [{status}]"
         return match.group(0)
 
@@ -227,6 +242,15 @@ def main():
         os.replace(temp_h, h)
 
         print(f"[*] Successfully updated {h}!")
+
+    print("===========================================")
+    print("                 SUMMARY                   ")
+    print("===========================================")
+    print(f"  Total Found     : {found_count}")
+    print(f"  Total Missing   : {missing_count}")
+    print(f"  Total Changed   : {changed_count}")
+    print(f"  Total Unchanged : {unchanged_count}")
+    print("===========================================")
 
 if __name__ == "__main__":
     main()

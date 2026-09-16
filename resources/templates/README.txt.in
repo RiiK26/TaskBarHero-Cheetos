@@ -6,7 +6,8 @@ HOW TO USE
 1. Start the game (TaskBarHero).
 2. Once the game is running, double-click the launch script for your operating system:
 
-   - WINDOWS: Double click `launch.bat` (It may ask for Administrator privileges so it can read the game's memory).
+   - WINDOWS: Double click `launch.bat` or directly run as administrator the @EXE_NAME@.exe
+     (It asks Administrator privileges to read the game's memory).
    - LINUX: Run `./launch_linux.sh` (Requires `protontricks` to be installed on your system).
 
 3. The GUI will pop up on your screen. You can use it to enable God Mode, Speedhacks, Rune Unlocks, and more!

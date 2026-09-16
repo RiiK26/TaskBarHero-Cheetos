@@ -59,7 +59,11 @@ jobs:
           FULL_NOTES=$(git log $COMMIT_RANGE --pretty=format:"* %s (%h)")
 
           if [ -z "$FULL_NOTES" ]; then
-            FULL_NOTES="* No changes."
+            FULL_NOTES="### $TAG
+          * No changes."
+          else
+            FULL_NOTES="### $TAG
+          $FULL_NOTES"
           fi
 
           # Generate GitHub compare link
@@ -69,17 +73,38 @@ jobs:
             COMPARE_LINK="https://github.com/${{ github.repository }}/compare/$PREV_TAG...$TAG"
           fi
 
+          # Fetch existing release body to preserve previous changelogs
+          EXISTING_BODY=$(gh release view "$MAJOR_VERSION" --json body -q .body 2>/dev/null || echo "")
+
+          # Extract old Source Changes, skipping the current TAG if it already exists (in case of a force-push)
+          OLD_SOURCE_CHANGES=$(echo "$EXISTING_BODY" | awk -v tag="$TAG" '
+            /^## Source Changes/ { if ($0 == "## Source Changes for " tag) skip = 1; else { skip = 0; flag = 1 } }
+            /^## Full Changelog/ { flag = 0; skip = 0 }
+            flag && !skip { print }
+          ')
+
+          # Extract old Full Changelog, skipping the current TAG if it exists
+          OLD_FULL_NOTES=$(echo "$EXISTING_BODY" | awk -v tag="$TAG" '
+            /^<summary>/ { flag = 1; next }
+            /^### / { if ($0 == "### " tag) skip = 1; else skip = 0 }
+            /^<\/details>/ { flag = 0 }
+            flag && !skip { print }
+          ')
+
           # Construct the new release body
           BODY="Latest build for **$MAJOR_VERSION** (Currently tracking \`$TAG\`)
 
           ## Source Changes for $TAG
           $NOTES
 
+          $OLD_SOURCE_CHANGES
+
           ## Full Changelog
           <details>
           <summary>Click to view full changelog</summary>
 
           $FULL_NOTES
+          $OLD_FULL_NOTES
 
           </details>
 
@@ -91,8 +116,11 @@ jobs:
           # Update release notes to reflect the latest tag and changelog
           gh release edit "$MAJOR_VERSION" --title "Cheetos $MAJOR_VERSION" --notes "$BODY"
 
+          # Extract version from vcpkg.json
+          PROJECT_VERSION=$(jq -r .version vcpkg.json)
+
           # Upload the new binaries, overwriting old ones
-          gh release upload "$MAJOR_VERSION" build/TBH-Cheetos-Release.zip --clobber
+          gh release upload "$MAJOR_VERSION" build/TBH-Cheetos-v${PROJECT_VERSION}.zip --clobber
 
           # Archive older major versions
           ALL_RELEASES=$(gh release list --limit 100 --json tagName -q '.[].tagName')

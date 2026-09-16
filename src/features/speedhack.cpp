@@ -1,8 +1,17 @@
 #include <windows.h>
+#include <psapi.h>
 #include <cstdint>
 #include <atomic>
 #include <emmintrin.h>
 #include "MinHook.h"
+
+#ifdef _MSC_VER
+  #include <intrin.h>
+  #pragma intrinsic(_ReturnAddress)
+  #define GET_CALLER() _ReturnAddress()
+#else
+  #define GET_CALLER() __builtin_return_address(0)
+#endif
 
 extern "C" __declspec(dllexport) float g_SpeedMultiplier  = 1.0f;
 extern "C" __declspec(dllexport) bool  g_SpeedhackEnabled = false;
@@ -25,6 +34,11 @@ struct TimeAnchors
 TimeAnchors      g_Anchors;
 std::atomic_flag g_SpinLock    = ATOMIC_FLAG_INIT;
 bool             g_Initialized = false;
+
+uintptr_t g_UnityPlayerBase    = 0;
+uintptr_t g_UnityPlayerEnd     = 0;
+uintptr_t g_GameAssemblyBase   = 0;
+uintptr_t g_GameAssemblyEnd    = 0;
 
 inline void Lock()
 {
@@ -141,93 +155,111 @@ void CheckSpeedChange()
   }
 }
 
+inline bool IsTargetCaller(uintptr_t caller)
+{
+  if (caller >= g_UnityPlayerBase && caller < g_UnityPlayerEnd)
+    return true;
+  if (caller >= g_GameAssemblyBase && caller < g_GameAssemblyEnd)
+    return true;
+  return false;
+}
+
 BOOL WINAPI hkQueryPerformanceCounter(LARGE_INTEGER* lpPerformanceCount)
 {
   BOOL result = oQueryPerformanceCounter(lpPerformanceCount);
   if (!result)
     return result;
 
-  Lock();
-  if (!g_Initialized)
-    InitializeAnchors();
-  CheckSpeedChange();
+  uintptr_t caller = (uintptr_t) GET_CALLER();
+  if (IsTargetCaller(caller)) {
+    Lock();
+    if (!g_Initialized)
+      InitializeAnchors();
+    CheckSpeedChange();
 
-  LONGLONG delta = lpPerformanceCount->QuadPart - g_Anchors.qpcReal;
-  if (delta < 0) {
-    lpPerformanceCount->QuadPart = g_Anchors.qpcFake;  // Prevent drift jumps
+    LONGLONG delta = lpPerformanceCount->QuadPart - g_Anchors.qpcReal;
+    if (delta < 0) {
+      lpPerformanceCount->QuadPart = g_Anchors.qpcFake;  // Prevent drift jumps
+    }
+    else {
+      lpPerformanceCount->QuadPart = g_Anchors.qpcFake + (LONGLONG) ((double) delta * g_Anchors.speed);
+    }
+    Unlock();
   }
-  else {
-    lpPerformanceCount->QuadPart = g_Anchors.qpcFake + (LONGLONG) ((double) delta * g_Anchors.speed);
-  }
-  Unlock();
 
   return result;
 }
 
 DWORD WINAPI hkGetTickCount()
 {
-  DWORD real = oGetTickCount();
+  DWORD real       = oGetTickCount();
 
-  Lock();
-  if (!g_Initialized)
-    InitializeAnchors();
-  CheckSpeedChange();
+  uintptr_t caller = (uintptr_t) GET_CALLER();
+  if (IsTargetCaller(caller)) {
+    Lock();
+    if (!g_Initialized)
+      InitializeAnchors();
+    CheckSpeedChange();
 
-  DWORD delta = real - g_Anchors.tickReal;
-  DWORD result;
-  if ((int32_t) delta < 0) {
-    result = g_Anchors.tickFake;
+    DWORD delta = real - g_Anchors.tickReal;
+    if ((int32_t) delta < 0) {
+      real = g_Anchors.tickFake;
+    }
+    else {
+      real = g_Anchors.tickFake + (DWORD) ((double) delta * g_Anchors.speed);
+    }
+    Unlock();
   }
-  else {
-    result = g_Anchors.tickFake + (DWORD) ((double) delta * g_Anchors.speed);
-  }
-  Unlock();
 
-  return result;
+  return real;
 }
 
 DWORD WINAPI hkTimeGetTime()
 {
-  DWORD real = oTimeGetTime();
+  DWORD real       = oTimeGetTime();
 
-  Lock();
-  if (!g_Initialized)
-    InitializeAnchors();
-  CheckSpeedChange();
+  uintptr_t caller = (uintptr_t) GET_CALLER();
+  if (IsTargetCaller(caller)) {
+    Lock();
+    if (!g_Initialized)
+      InitializeAnchors();
+    CheckSpeedChange();
 
-  DWORD delta = real - g_Anchors.tgtReal;
-  DWORD result;
-  if ((int32_t) delta < 0) {
-    result = g_Anchors.tgtFake;
+    DWORD delta = real - g_Anchors.tgtReal;
+    if ((int32_t) delta < 0) {
+      real = g_Anchors.tgtFake;
+    }
+    else {
+      real = g_Anchors.tgtFake + (DWORD) ((double) delta * g_Anchors.speed);
+    }
+    Unlock();
   }
-  else {
-    result = g_Anchors.tgtFake + (DWORD) ((double) delta * g_Anchors.speed);
-  }
-  Unlock();
 
-  return result;
+  return real;
 }
 
 ULONGLONG WINAPI hkGetTickCount64()
 {
-  ULONGLONG real = oGetTickCount64();
+  ULONGLONG real   = oGetTickCount64();
 
-  Lock();
-  if (!g_Initialized)
-    InitializeAnchors();
-  CheckSpeedChange();
+  uintptr_t caller = (uintptr_t) GET_CALLER();
+  if (IsTargetCaller(caller)) {
+    Lock();
+    if (!g_Initialized)
+      InitializeAnchors();
+    CheckSpeedChange();
 
-  LONGLONG  delta = (LONGLONG) (real - g_Anchors.tick64Real);
-  ULONGLONG result;
-  if (delta < 0) {
-    result = g_Anchors.tick64Fake;
+    LONGLONG delta = (LONGLONG) (real - g_Anchors.tick64Real);
+    if (delta < 0) {
+      real = g_Anchors.tick64Fake;
+    }
+    else {
+      real = g_Anchors.tick64Fake + (ULONGLONG) ((double) delta * g_Anchors.speed);
+    }
+    Unlock();
   }
-  else {
-    result = g_Anchors.tick64Fake + (ULONGLONG) ((double) delta * g_Anchors.speed);
-  }
-  Unlock();
 
-  return result;
+  return real;
 }
 
 VOID WINAPI hkGetSystemTimeAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
@@ -236,26 +268,29 @@ VOID WINAPI hkGetSystemTimeAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
     return;
   oGetSystemTimeAsFileTime(lpSystemTimeAsFileTime);
 
-  Lock();
-  if (!g_Initialized)
-    InitializeAnchors();
-  CheckSpeedChange();
+  uintptr_t caller = (uintptr_t) GET_CALLER();
+  if (IsTargetCaller(caller)) {
+    Lock();
+    if (!g_Initialized)
+      InitializeAnchors();
+    CheckSpeedChange();
 
-  ULARGE_INTEGER uli;
-  uli.LowPart    = lpSystemTimeAsFileTime->dwLowDateTime;
-  uli.HighPart   = lpSystemTimeAsFileTime->dwHighDateTime;
+    ULARGE_INTEGER uli;
+    uli.LowPart    = lpSystemTimeAsFileTime->dwLowDateTime;
+    uli.HighPart   = lpSystemTimeAsFileTime->dwHighDateTime;
 
-  LONGLONG delta = (LONGLONG) (uli.QuadPart - g_Anchors.ftReal);
-  if (delta < 0) {
-    uli.QuadPart = g_Anchors.ftFake;
+    LONGLONG delta = (LONGLONG) (uli.QuadPart - g_Anchors.ftReal);
+    if (delta < 0) {
+      uli.QuadPart = g_Anchors.ftFake;
+    }
+    else {
+      uli.QuadPart = g_Anchors.ftFake + (ULONGLONG) ((double) delta * g_Anchors.speed);
+    }
+
+    lpSystemTimeAsFileTime->dwLowDateTime  = uli.LowPart;
+    lpSystemTimeAsFileTime->dwHighDateTime = uli.HighPart;
+    Unlock();
   }
-  else {
-    uli.QuadPart = g_Anchors.ftFake + (ULONGLONG) ((double) delta * g_Anchors.speed);
-  }
-
-  lpSystemTimeAsFileTime->dwLowDateTime  = uli.LowPart;
-  lpSystemTimeAsFileTime->dwHighDateTime = uli.HighPart;
-  Unlock();
 }
 
 VOID WINAPI hkGetSystemTimePreciseAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
@@ -264,30 +299,52 @@ VOID WINAPI hkGetSystemTimePreciseAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
     return;
   oGetSystemTimePreciseAsFileTime(lpSystemTimeAsFileTime);
 
-  Lock();
-  if (!g_Initialized)
-    InitializeAnchors();
-  CheckSpeedChange();
+  uintptr_t caller = (uintptr_t) GET_CALLER();
+  if (IsTargetCaller(caller)) {
+    Lock();
+    if (!g_Initialized)
+      InitializeAnchors();
+    CheckSpeedChange();
 
-  ULARGE_INTEGER uli;
-  uli.LowPart    = lpSystemTimeAsFileTime->dwLowDateTime;
-  uli.HighPart   = lpSystemTimeAsFileTime->dwHighDateTime;
+    ULARGE_INTEGER uli;
+    uli.LowPart    = lpSystemTimeAsFileTime->dwLowDateTime;
+    uli.HighPart   = lpSystemTimeAsFileTime->dwHighDateTime;
 
-  LONGLONG delta = (LONGLONG) (uli.QuadPart - g_Anchors.ftReal);
-  if (delta < 0) {
-    uli.QuadPart = g_Anchors.ftFake;
+    LONGLONG delta = (LONGLONG) (uli.QuadPart - g_Anchors.ftReal);
+    if (delta < 0) {
+      uli.QuadPart = g_Anchors.ftFake;
+    }
+    else {
+      uli.QuadPart = g_Anchors.ftFake + (ULONGLONG) ((double) delta * g_Anchors.speed);
+    }
+
+    lpSystemTimeAsFileTime->dwLowDateTime  = uli.LowPart;
+    lpSystemTimeAsFileTime->dwHighDateTime = uli.HighPart;
+    Unlock();
   }
-  else {
-    uli.QuadPart = g_Anchors.ftFake + (ULONGLONG) ((double) delta * g_Anchors.speed);
-  }
-
-  lpSystemTimeAsFileTime->dwLowDateTime  = uli.LowPart;
-  lpSystemTimeAsFileTime->dwHighDateTime = uli.HighPart;
-  Unlock();
 }
 
 DWORD WINAPI MainThread(LPVOID lpParam)
 {
+  // Setup module bounds
+  HMODULE hUnity = GetModuleHandle("UnityPlayer.dll");
+  if (hUnity) {
+    MODULEINFO mi;
+    if (GetModuleInformation(GetCurrentProcess(), hUnity, &mi, sizeof(mi))) {
+      g_UnityPlayerBase = (uintptr_t) mi.lpBaseOfDll;
+      g_UnityPlayerEnd  = g_UnityPlayerBase + mi.SizeOfImage;
+    }
+  }
+
+  HMODULE hAssembly = GetModuleHandle("GameAssembly.dll");
+  if (hAssembly) {
+    MODULEINFO mi;
+    if (GetModuleInformation(GetCurrentProcess(), hAssembly, &mi, sizeof(mi))) {
+      g_GameAssemblyBase = (uintptr_t) mi.lpBaseOfDll;
+      g_GameAssemblyEnd  = g_GameAssemblyBase + mi.SizeOfImage;
+    }
+  }
+
   if (MH_Initialize() != MH_OK)
     return 0;
 

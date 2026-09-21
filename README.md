@@ -6,8 +6,7 @@
 [![Cheetos Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FRiiK26%2FTaskBarHero-Cheetos%2Fmain%2Fvcpkg.json&query=%24.version&label=Version&color=blue)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20-green)](#)
-[![Game Version](https://img.shields.io/badge/Tested%20on-latest%20game%20version-orange)](#)
-[![Latest Version](https://img.shields.io/badge/latest-1.2.4-blue)](#)
+[![Game Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FRiiK26%2FTaskBarHero-Cheetos%2Fmain%2Fvcpkg.json&query=%24.gameversion&label=Game%20Version&color=orange)](#)
 
 An internal cheat tool for **TaskBarHero** that working directly into the memory.
 

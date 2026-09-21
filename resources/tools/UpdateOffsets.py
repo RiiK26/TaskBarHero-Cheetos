@@ -48,13 +48,15 @@ def main():
         f"RVA tags. Scanning dump.cs..."
     )
 
-    # Step 2: Scan dump.cs
-    current_class = None
-    last_rva = None
-    last_rva_line = None
-    last_float_offset = None
-    found_dict_a = False
-
+    # Step 2: Scan dump.cs - Pass 1 (Identify Dynamic Classes)
+    dynamic_wg_class = None
+    dynamic_wn_class = None
+    dynamic_statcontainer_class = None
+    
+    wg_candidate_HeroInfoData = {}
+    wg_candidate_Hero = {}
+    backing_fields = {}
+    
     class_def_re = re.compile(
         r"^\s*(?:public|private|protected|internal)?\s*(?:sealed|abstract|static)?\s*(?:class|struct)\s+([^:\s]+)"
     )
@@ -64,6 +66,54 @@ def main():
     )
     rva_comment_re = re.compile(r"//\s*RVA:\s*(0x[0-9A-Fa-f]+)")
     method_re = re.compile(r"\s+([^\(\s]+)\s*\(")
+
+    with open(dump_path, 'r', encoding='utf-8') as f:
+        current_class = None
+        for line in f:
+            c_match = class_def_re.search(line)
+            if c_match:
+                current_class = c_match.group(1)
+                continue
+            
+            if current_class:
+                if "Dictionary<StatType, float>" in line and not dynamic_statcontainer_class:
+                    dynamic_statcontainer_class = current_class
+                
+                if "HeroInfoData " in line:
+                    wg_candidate_HeroInfoData[current_class] = True
+                if "Hero " in line:
+                    wg_candidate_Hero[current_class] = True
+                    
+                if "k__BackingField" in line:
+                    parts = line.strip().split()
+                    for i, p in enumerate(parts):
+                        if "k__BackingField" in p and i > 0:
+                            type_name = parts[i-1]
+                            if current_class not in backing_fields:
+                                backing_fields[current_class] = []
+                            backing_fields[current_class].append(type_name)
+
+    for cls in wg_candidate_HeroInfoData:
+        if cls in wg_candidate_Hero and cls != "HeroInfoData":
+            dynamic_wg_class = cls
+            break
+            
+    if dynamic_statcontainer_class:
+        for cls, types in backing_fields.items():
+            if dynamic_statcontainer_class in types:
+                dynamic_wn_class = cls
+                break
+
+    print(f"[*] Dynamically identified wg: {dynamic_wg_class}")
+    print(f"[*] Dynamically identified wn: {dynamic_wn_class}")
+    print(f"[*] Dynamically identified StatContainer: {dynamic_statcontainer_class}")
+
+    # Step 2: Scan dump.cs - Pass 2 (Extract Offsets)
+    current_class = None
+    last_rva = None
+    last_rva_line = None
+    last_float_offset = None
+    found_dict_a = False
 
     with open(dump_path, 'r', encoding='utf-8') as f:
         for line in f:
@@ -106,8 +156,8 @@ def main():
                         if ("SaveManager", "PlayerSaveData") in needed_offsets:
                             needed_offsets[("SaveManager", "PlayerSaveData")] = offset
 
-                    # Heuristic for wg (HeroRef)
-                    if current_class == "wg":
+                    # Dynamic wg Heuristic (HeroRef)
+                    if dynamic_wg_class and current_class == dynamic_wg_class:
                         if "HeroInfoData " in line:
                             if ("wg", "HeroInfoDataRef") in needed_offsets:
                                 needed_offsets[("wg", "HeroInfoDataRef")] = offset
@@ -115,11 +165,15 @@ def main():
                             if ("wg", "HeroBackRef") in needed_offsets:
                                 needed_offsets[("wg", "HeroBackRef")] = offset
 
-                    # Heuristic for wn (StatContainer k__BackingField)
-                    if current_class == "wn":
+                    # Dynamic wn Heuristic (StatContainer k__BackingField)
+                    if dynamic_wn_class and current_class == dynamic_wn_class:
                         if "k__BackingField" in line:
-                            if ("wn", "StatContainerBackingField") in needed_offsets:
-                                needed_offsets[("wn", "StatContainerBackingField")] = offset
+                            parts = line.strip().split()
+                            for i, p in enumerate(parts):
+                                if "k__BackingField" in p and i > 0:
+                                    if parts[i-1] == dynamic_statcontainer_class:
+                                        if ("wn", "StatContainerBackingField") in needed_offsets:
+                                            needed_offsets[("wn", "StatContainerBackingField")] = offset
 
                     if (current_class, fname) in needed_offsets:
                         needed_offsets[(current_class, fname)] = offset

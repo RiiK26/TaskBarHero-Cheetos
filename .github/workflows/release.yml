@@ -119,8 +119,17 @@ jobs:
           # Extract version from vcpkg.json
           PROJECT_VERSION=$(jq -r .version vcpkg.json)
 
-          # Upload the new binaries, overwriting old ones
-          gh release upload "$MAJOR_VERSION" build/TBH-Cheetos-v${PROJECT_VERSION}.zip --clobber
+          # Delete old zip assets to prevent duplicates (since the version number in the filename changes)
+          OLD_ASSETS=$(gh release view "$MAJOR_VERSION" --json assets -q '.assets[].name' 2>/dev/null || echo "")
+          for asset in $OLD_ASSETS; do
+            if [[ "$asset" == *.zip ]]; then
+              echo "Deleting old asset: $asset"
+              gh release delete-asset "$MAJOR_VERSION" "$asset" -y || true
+            fi
+          done
+
+          # Upload the new binaries
+          gh release upload "$MAJOR_VERSION" build/TBH-Cheetos-v${PROJECT_VERSION}.zip
 
           # Archive older major versions
           ALL_RELEASES=$(gh release list --limit 100 --json tagName -q '.[].tagName')

@@ -17,7 +17,7 @@ jobs:
           submodules: recursive
 
       - name: Install MinGW
-        run: sudo apt-get update && sudo apt-get install -y mingw-w64 cmake
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64 cmake ninja-build
 
       - name: Set App Version
         id: version
@@ -31,7 +31,7 @@ jobs:
       - name: Configure CMake
         run: |
           ./vcpkg/bootstrap-vcpkg.sh
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=${{ github.workspace }}/cmake/mingw-toolchain.cmake -DVCPKG_TARGET_TRIPLET=x64-mingw-static -DAPP_VERSION="${{ steps.version.outputs.version }}"
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=${{ github.workspace }}/cmake/mingw-toolchain.cmake -DVCPKG_TARGET_TRIPLET=x64-mingw-static -DAPP_VERSION="${{ steps.version.outputs.version }}"
 
       - name: Build and Generate Scripts
         run: cmake --build build --config Release

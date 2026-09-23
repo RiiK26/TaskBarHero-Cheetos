@@ -45,23 +45,23 @@ public:
 
     static const PatchTarget targets[] = {
       // Direct Obscured Types Bypass (Bypass op_Implicit completely Causing Crash or atleast broken UI)
-      //{"ObscuredInt.op_Implicit",               0x728A70}, // @RVA[ObscuredInt.op_Implicit] [UNCHANGED]
-      //{"ObscuredFloat.op_Implicit",             0x7268E0}, // @RVA[ObscuredFloat.op_Implicit] [UNCHANGED]
-      //{"ObscuredDouble.op_Implicit",            0x725AF0}, // @RVA[ObscuredDouble.op_Implicit] [UNCHANGED]
-      //{"ObscuredLong.op_Implicit",              0x729420}, // @RVA[ObscuredLong.op_Implicit] [UNCHANGED]
+      //{"ObscuredInt.op_Implicit",               0x72CBF0}, // @RVA[ObscuredInt.op_Implicit] [CHANGED]
+      //{"ObscuredFloat.op_Implicit",             0x72AA60}, // @RVA[ObscuredFloat.op_Implicit] [CHANGED]
+      //{"ObscuredDouble.op_Implicit",            0x729C70}, // @RVA[ObscuredDouble.op_Implicit] [CHANGED]
+      //{"ObscuredLong.op_Implicit",              0x72D5A0}, // @RVA[ObscuredLong.op_Implicit] [CHANGED]
 
       // Detector Core Methods (Override of ACTkDetectorBase StartDetection/Update)
-      {"InjectionDetector.DetectorCore",        0x738300}, // @RVA[InjectionDetector.DetectorCore] [UNCHANGED]
-      {"SpeedHackDetector.DetectorCore",        0x73E1D0}, // @RVA[SpeedHackDetector.DetectorCore] [UNCHANGED]
-      {"TimeCheatingDetector.DetectorCore",     0x73FB60}, // @RVA[TimeCheatingDetector.DetectorCore] [UNCHANGED]
-      {"ObscuredCheatingDetector.DetectorCore", 0x7386F0}, // @RVA[ObscuredCheatingDetector.DetectorCore] [UNCHANGED]
-      {"WallHackDetector.DetectorCore",         0x746BD0}, // @RVA[WallHackDetector.DetectorCore] [UNCHANGED]
+      {"InjectionDetector.DetectorCore",        0x73C480}, // @RVA[InjectionDetector.DetectorCore] [CHANGED]
+      {"SpeedHackDetector.DetectorCore",        0x742350}, // @RVA[SpeedHackDetector.DetectorCore] [CHANGED]
+      {"TimeCheatingDetector.DetectorCore",     0x743CE0}, // @RVA[TimeCheatingDetector.DetectorCore] [CHANGED]
+      {"ObscuredCheatingDetector.DetectorCore", 0x73C870}, // @RVA[ObscuredCheatingDetector.DetectorCore] [CHANGED]
+      {"WallHackDetector.DetectorCore",         0x74AEF0}, // @RVA[WallHackDetector.DetectorCore] [CHANGED]
 
       // Additional Unity Lifecycle Methods used by detectors
-      {"SpeedHackDetector.Update",              0x73DCF0}, // @RVA[SpeedHackDetector.Update] [UNCHANGED]
-      {"TimeCheatingDetector.Update",           0x73F730}, // @RVA[TimeCheatingDetector.Update] [UNCHANGED]
-      {"WallHackDetector.Update",               0x7461B0}, // @RVA[WallHackDetector.Update] [UNCHANGED]
-      {"WallHackDetector.FixedUpdate",          0x745560}, // @RVA[WallHackDetector.FixedUpdate] [UNCHANGED]
+      {"SpeedHackDetector.Update",              0x741E70}, // @RVA[SpeedHackDetector.Update] [CHANGED]
+      {"TimeCheatingDetector.Update",           0x7438B0}, // @RVA[TimeCheatingDetector.Update] [CHANGED]
+      {"WallHackDetector.Update",               0x74A330}, // @RVA[WallHackDetector.Update] [CHANGED]
+      {"WallHackDetector.FixedUpdate",          0x7496E0}, // @RVA[WallHackDetector.FixedUpdate] [CHANGED]
     };
 
     for (const auto& t : targets) {

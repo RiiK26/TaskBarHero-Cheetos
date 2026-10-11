@@ -109,8 +109,6 @@ void CheetosGUI::RenderTooltip(const char* text)
 
 void CheetosGUI::DrawUI()
 {
-
-
   // ---- Top Bar: Process Status ----
   bool isAttached = m_mem.IsAttached();
   if (isAttached) {

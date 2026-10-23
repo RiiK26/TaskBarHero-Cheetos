@@ -174,9 +174,9 @@ std::optional<PlayerDataResult> PlayerDataFinder::Find()
 
                 for (size_t i = Il2CppDictOffsets::Count; reg.RegionSize >= 0x30 && i < reg.RegionSize - 0x30; i += 4) {
                   int32_t val = *reinterpret_cast<int32_t*>(&buffer[i]);
-                  // Total runes history during update: 197 -> 241 -> 248
+                  // Total runes history during update: 197 -> 241 -> 248 -> 253
                   // make it between range even knowing the exact nodes
-                  if (val >= 225 && val <= 260) {
+                  if (val >= 248 && val <= 260) {
                     size_t dictOffset = i - Il2CppDictOffsets::Count;
 
                     int32_t freeCount = *reinterpret_cast<int32_t*>(&buffer[dictOffset + Il2CppDictOffsets::FreeCount]);

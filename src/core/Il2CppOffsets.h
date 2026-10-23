@@ -80,7 +80,7 @@ struct PlayerSaveDataOffsets
   static constexpr int32_t PetSaveData        = 0x80;  // @[PlayerSaveData.PetSaveData] [UNCHANGED]
   static constexpr int32_t RuneSaveData       = 0x88;  // @[PlayerSaveData.RuneSaveData] [UNCHANGED]
   static constexpr int32_t InventorySaveDatas = 0x90;  // @[PlayerSaveData.inventorySaveDatas] [UNCHANGED]
-  static constexpr int32_t CubeSaveLevelData  = 0xB0;  // @[PlayerSaveData.cubeSaveLevelData] [UNCHANGED]
+  static constexpr int32_t CubeSaveLevelData  = 0xB8;  // @[PlayerSaveData.cubeSaveLevelData] [UNCHANGED]
 };
 
 // HeroSaveData (TypeDefIndex: 1258)
@@ -126,8 +126,8 @@ struct CubeRecipeSaveDataOffsets
 // =========================================================================
 struct StageManagerOffsets
 {
-  static constexpr int32_t HeroList = 0x30;   // @[StageManager.HeroList] [UNCHANGED]
-  static constexpr int32_t OnGetBox = 0x110;  // @[StageManager.OnGetBox] [UNCHANGED]
+  static constexpr int32_t HeroList = 0x68;   // @[StageManager.HeroList] [UNCHANGED]
+  static constexpr int32_t OnGetBox = 0x148;  // @[StageManager.OnGetBox] [UNCHANGED]
 };
 
 // EBoxType values (TypeDefIndex: 1006)

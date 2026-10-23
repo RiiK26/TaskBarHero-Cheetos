@@ -52,11 +52,11 @@ def main():
     dynamic_wg_class = None
     dynamic_wn_class = None
     dynamic_statcontainer_class = None
-    
+
     wg_candidate_HeroInfoData = {}
     wg_candidate_Hero = {}
     backing_fields = {}
-    
+
     class_def_re = re.compile(
         r"^\s*(?:public|private|protected|internal)?\s*(?:sealed|abstract|static)?\s*(?:class|struct)\s+([^:\s]+)"
     )
@@ -65,7 +65,10 @@ def main():
         r"(?:[A-Za-z0-9_<>\[\], ]+)\s+([^;\s]+)\s*;\s*//\s*(0x[0-9A-Fa-f]+)"
     )
     rva_comment_re = re.compile(r"//\s*RVA:\s*(0x[0-9A-Fa-f]+)")
-    method_re = re.compile(r"\s+([^\(\s]+)\s*\(")
+    method_re = re.compile(
+        r"^\s*(?:(?:public|private|protected|internal|static|virtual|override|abstract|sealed|extern|new|unsafe|async)\s+)+"
+        r"[A-Za-z0-9_<>,.\[\]?]+\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\("
+    )
 
     with open(dump_path, 'r', encoding='utf-8') as f:
         current_class = None
@@ -74,16 +77,16 @@ def main():
             if c_match:
                 current_class = c_match.group(1)
                 continue
-            
+
             if current_class:
                 if "Dictionary<StatType, float>" in line and not dynamic_statcontainer_class:
                     dynamic_statcontainer_class = current_class
-                
+
                 if "HeroInfoData " in line:
                     wg_candidate_HeroInfoData[current_class] = True
                 if "Hero " in line:
                     wg_candidate_Hero[current_class] = True
-                    
+
                 if "k__BackingField" in line:
                     parts = line.strip().split()
                     for i, p in enumerate(parts):
@@ -97,7 +100,7 @@ def main():
         if cls in wg_candidate_Hero and cls != "HeroInfoData":
             dynamic_wg_class = cls
             break
-            
+
     if dynamic_statcontainer_class:
         for cls, types in backing_fields.items():
             if dynamic_statcontainer_class in types:
@@ -203,8 +206,15 @@ def main():
                             if last_rva_line and "Slot: 18" in last_rva_line:
                                 if (current_class, "DetectorCore") in needed_rvas:
                                     needed_rvas[(current_class, "DetectorCore")] = last_rva
-                    last_rva = None
-                    last_rva_line = None
+                        last_rva = None
+                        last_rva_line = None
+                    elif line.lstrip().startswith(("//", "[")):
+                        # Il2CppDumper may place attributes or call metadata
+                        # between the RVA comment and the method declaration.
+                        continue
+                    else:
+                        last_rva = None
+                        last_rva_line = None
 
     # Step 3: Verify missing
     missing_count = 0
@@ -305,6 +315,9 @@ def main():
     print(f"  Total Changed   : {changed_count}")
     print(f"  Total Unchanged : {unchanged_count}")
     print("===========================================")
+
+    if missing_count > 0:
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

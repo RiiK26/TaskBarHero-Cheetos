@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Navigate to the project root directory
 cd "$(dirname "$0")/.."
@@ -24,7 +25,10 @@ if [ ! -f "$UPDATER_SCRIPT" ]; then
 fi
 
 echo "[*] Found dump.cs! Extracting offsets..."
-python3 "$UPDATER_SCRIPT" "$DUMP_FILE" "$HEADER_FILE" "$AC_FILE"
+if ! python3 "$UPDATER_SCRIPT" "$DUMP_FILE" "$HEADER_FILE" "$AC_FILE"; then
+    echo "[!] Offset update failed: one or more tagged entries are missing."
+    exit 1
+fi
 
 echo ""
 echo "[*] Done! Don't forget to rebuild the project."

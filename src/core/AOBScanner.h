@@ -2,13 +2,25 @@
 
 #include "ProcessMemory.h"
 
+#include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <cmath>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 #include <memory>
+
+// Unaligned-safe 64-bit load from a scan buffer.
+inline uint64_t LoadU64(const uint8_t* p)
+{
+  uint64_t v;
+  std::memcpy(&v, p, sizeof(v));
+  return v;
+}
 
 // Pattern element: value + whether it's a wildcard ("??" in CE's AOB syntax)
 struct PatternByte
@@ -199,6 +211,101 @@ public:
   std::vector<uintptr_t> Scan(const std::string& aob, bool requireWritable = true) const
   {
     return Scan(ParsePattern(aob), requireWritable);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fast parallel scan over 8-byte aligned slots.
+  //
+  // IL2CPP heap objects (and every pointer field inside them) are 8-byte
+  // aligned, so visiting only aligned slots is lossless for object/pointer
+  // searches while being far cheaper than a byte-by-byte AOB walk.
+  //
+  //  - Memory is read in fixed-size chunks (no giant per-region buffers, and an
+  //    unreadable page only loses one chunk instead of a whole region).
+  //  - Chunks are distributed across worker threads.
+  //  - `pred(const uint8_t* p)` is called for every aligned slot that has at
+  //    least `windowSize` valid bytes at `p`; return true to record a hit.
+  //    It runs concurrently on several threads, so it must be read-only.
+  //  - One pass can match many targets at once (put them all in `pred`).
+  //
+  // Returned hits are sorted ascending (same order as the sequential Scan()).
+  // ---------------------------------------------------------------------------
+  template<typename Pred>
+  std::vector<uintptr_t>
+  ScanAligned(Pred pred, size_t windowSize, bool requireWritable = true, bool privateOnly = false) const
+  {
+    constexpr size_t kAlign     = 8;
+    constexpr size_t kChunkSize = 1024 * 1024;
+    constexpr size_t kMaxRegion = 256ull * 1024 * 1024;  // same cap as Scan()
+
+    std::vector<uintptr_t> hits;
+    if (windowSize == 0)
+      return hits;
+
+    struct Chunk
+    {
+      uintptr_t base;
+      size_t    scanLen;  // slots that "belong" to this chunk
+      size_t    readLen;  // scanLen + overlap so the last window is complete
+    };
+    std::vector<Chunk> chunks;
+    for (const auto& mbi : m_mem.EnumerateRegions(requireWritable, privateOnly)) {
+      if (mbi.RegionSize == 0 || mbi.RegionSize > kMaxRegion)
+        continue;
+      uintptr_t regionBase = (uintptr_t) mbi.BaseAddress;  // page aligned -> slots stay 8-aligned
+      uintptr_t regionEnd  = regionBase + mbi.RegionSize;
+      for (uintptr_t base = regionBase; base < regionEnd; base += kChunkSize) {
+        size_t scanLen = std::min<size_t>(kChunkSize, regionEnd - base);
+        size_t readLen = std::min<size_t>(scanLen + windowSize, regionEnd - base);
+        chunks.push_back({base, scanLen, readLen});
+      }
+    }
+    if (chunks.empty())
+      return hits;
+
+    unsigned workerCount = std::clamp(std::thread::hardware_concurrency(), 1u, 8u);
+    workerCount          = (unsigned) std::min<size_t>(workerCount, chunks.size());
+
+    std::atomic<size_t> nextChunk{0};
+    std::mutex          hitsMutex;
+
+    auto worker = [&]() {
+      std::unique_ptr<uint8_t[]> buf(new uint8_t[kChunkSize + windowSize]);
+      std::vector<uintptr_t> localHits;
+
+      for (size_t idx; (idx = nextChunk.fetch_add(1, std::memory_order_relaxed)) < chunks.size();) {
+        const Chunk& c         = chunks[idx];
+        SIZE_T       bytesRead = 0;
+        if (
+          !ReadProcessMemory(m_mem.Handle(), (LPCVOID) c.base, buf.get(), c.readLen, &bytesRead)
+          || bytesRead < windowSize
+        )
+          continue;
+
+        const size_t   limit = std::min<size_t>(c.scanLen, bytesRead - windowSize + 1);
+        const uint8_t* p     = buf.get();
+        for (size_t off = 0; off < limit; off += kAlign) {
+          if (pred(p + off))
+            localHits.push_back(c.base + off);
+        }
+      }
+
+      if (!localHits.empty()) {
+        std::lock_guard<std::mutex> lock(hitsMutex);
+        hits.insert(hits.end(), localHits.begin(), localHits.end());
+      }
+    };
+
+    std::vector<std::thread> threads;
+    threads.reserve(workerCount - 1);
+    for (unsigned t = 1; t < workerCount; t++)
+      threads.emplace_back(worker);
+    worker();  // calling thread does its share too
+    for (auto& th : threads)
+      th.join();
+
+    std::sort(hits.begin(), hits.end());
+    return hits;
   }
 
 private:

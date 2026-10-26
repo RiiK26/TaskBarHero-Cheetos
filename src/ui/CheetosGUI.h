@@ -48,7 +48,7 @@ private:
   void SetSpeedhack(float speed);
   void SetSpeedhackEnable(bool enable);
 
-  void SaveOriginalStats();
+  void SaveOriginalStats(const std::vector<HeroResult>& heroes);
   void RestoreOriginalStats();
 
   ProcessMemory&   m_mem;
@@ -70,6 +70,7 @@ private:
   bool              m_speedhackEnabled   = false;
   float             m_speedValue         = 1.0f;
   std::atomic<bool> m_isScanning{false};
+  bool              m_forceHeroRescan = false;
 
   std::vector<uint8_t> m_statStates;
   std::vector<float>   m_statValues;

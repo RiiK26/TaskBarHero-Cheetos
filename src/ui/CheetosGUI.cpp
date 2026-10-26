@@ -5,6 +5,7 @@
 #ifndef EXPECTED_DLL_HASH
   #define EXPECTED_DLL_HASH ""
 #endif
+#include <chrono>
 #include <thread>
 
 #ifndef APP_VERSION
@@ -117,6 +118,7 @@ void CheetosGUI::DrawUI()
     if (ImGui::Button("Detach")) {
       m_mem.Close();
       m_playerDataAddr = 0;
+      m_heroFinder.ClearCache();
       AddLog("[System] Detached from game.");
     }
   }
@@ -126,6 +128,7 @@ void CheetosGUI::DrawUI()
     if (ImGui::Button("Attach to Game")) {
       if (m_mem.AttachByName(L"TaskBarHero.exe")) {
         m_playerDataAddr = 0;  // Clear stale pointers
+        m_heroFinder.ClearCache();
         AddLog("[System] Attached successfully.");
 
         // Re-apply essential patches to new process
@@ -206,22 +209,37 @@ void CheetosGUI::DrawUI()
     ImGui::BeginDisabled();
   }
   if (ImGui::Button("Apply God Mode", ImVec2(250, 20))) {
-    m_isScanning = true;
-    AddLog("[GodMode] Scanning for heroes...");
+    if (!m_godMode.HasEnabledStats()) {
+      AddLog("[GodMode] No stats selected. Check at least one stat.");
+    }
+    else {
+      m_isScanning = true;
+      AddLog("[GodMode] Scanning for heroes...");
 
-    // Capture custom values by value so the thread can access them safely
-    std::vector<float> valuesToApply = m_statValues;
+      // Capture custom values by value so the thread can access them safely
+      std::vector<float> valuesToApply = m_statValues;
+      bool               forceRescan   = m_forceHeroRescan;
 
-    std::thread([this, valuesToApply]() {
-      // Save original stats BEFORE applying god mode
-      if (!m_godModeActive) {
-        SaveOriginalStats();
-      }
-      std::string result = m_godMode.Apply(m_heroFinder, valuesToApply);
-      m_godModeActive    = true;
-      PostLogFromThread(result);
-      m_isScanning = false;
-    }).detach();
+      std::thread([this, valuesToApply, forceRescan]() {
+        auto start = std::chrono::steady_clock::now();
+
+        // One lookup shared by backup + apply (cached addresses are re-validated)
+        auto heroes = m_heroFinder.FindAll(true, forceRescan);
+        bool cached = m_heroFinder.WasLastFromCache();
+
+        // Save original stats BEFORE applying god mode
+        if (!m_godModeActive) {
+          SaveOriginalStats(heroes);
+        }
+        std::string result = m_godMode.Apply(heroes, valuesToApply);
+        m_godModeActive    = true;
+
+        auto ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        PostLogFromThread(result + " (" + std::to_string(ms) + " ms" + (cached ? ", cached" : "") + ")");
+        m_isScanning = false;
+      }).detach();
+    }
   }
   if (m_isScanning) {
     ImGui::EndDisabled();
@@ -239,6 +257,12 @@ void CheetosGUI::DrawUI()
     if (ImGui::IsItemHovered())
       RenderTooltip("Restores original stat values");
   }
+
+  ImGui::Checkbox("Fast Scan", &m_forceHeroRescan);
+  ImGui::SameLine();
+  ImGui::TextDisabled("(?)");
+  if (ImGui::IsItemHovered())
+    RenderTooltip("make scanning faster");
 
   ImGui::Spacing();
 
@@ -597,11 +621,10 @@ void CheetosGUI::SetSpeedhackEnable(bool enable)
   }
 }
 
-void CheetosGUI::SaveOriginalStats()
+void CheetosGUI::SaveOriginalStats(const std::vector<HeroResult>& results)
 {
   m_statBackups.clear();
 
-  auto results = m_heroFinder.FindAll(true);
   if (results.empty())
     return;
 

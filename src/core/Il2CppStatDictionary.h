@@ -3,8 +3,10 @@
 #include "StatType.h"
 
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 /* -----------------------------------------------------------------------
  * Reads a real IL2CPP Dictionary<TKey, TValue> where TKey is a 4-byte
@@ -53,24 +55,30 @@ public:
     if (!length || *length <= 0 || *length > 4096)
       return result;  // sanity cap
 
-    for (int32_t i = 0; i < *length; i++) {
-      uintptr_t entryAddr = *entriesPtr + ArrayDataOffset + (i * EntrySize);
+    // Pull the whole entries array in one ReadProcessMemory (max 64 KB)
+    // instead of two remote reads per entry.
+    const uintptr_t      dataAddr = *entriesPtr + ArrayDataOffset;
+    std::vector<uint8_t> buf((size_t) *length * EntrySize);
+    if (!m_mem.ReadBytes(dataAddr, buf.data(), buf.size()))
+      return result;
 
-      auto key            = m_mem.ReadInt32(entryAddr + EntryKeyOffset);
-      if (!key)
-        continue;
+    result.reserve((size_t) *length);
+    for (int32_t i = 0; i < *length; i++) {
+      const uint8_t* entry = buf.data() + (size_t) i * EntrySize;
+
+      int32_t key;
+      std::memcpy(&key, entry + EntryKeyOffset, sizeof(key));
 
       // hashCode == -1 (or key == 0/NONE with no valid hash) marks a
       // free/unused slot in .NET's Dictionary implementation -- skip.
-      if (*key <= 0)
+      if (key <= 0)
         continue;
 
-      uintptr_t valAddr = entryAddr + EntryValueOffset;
-      auto      value   = m_mem.ReadFloat(valAddr);
-      if (!value)
-        continue;
+      float value;
+      std::memcpy(&value, entry + EntryValueOffset, sizeof(value));
 
-      result[(StatType) *key] = {valAddr, *value};
+      uintptr_t valAddr      = dataAddr + (uintptr_t) i * EntrySize + EntryValueOffset;
+      result[(StatType) key] = {valAddr, value};
     }
     return result;
   }

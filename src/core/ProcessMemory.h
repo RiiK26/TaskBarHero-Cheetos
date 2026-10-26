@@ -42,7 +42,9 @@ public:
   bool IsAttached() const { return m_handle != nullptr; }
 
   // Returns list of committed, readable regions (analogous to CE's "+W-C" region walk).
-  std::vector<MEMORY_BASIC_INFORMATION> EnumerateRegions(bool requireWritable = true) const
+  // privateOnly restricts the walk to MEM_PRIVATE pages (where the IL2CPP GC heap
+  // lives), skipping mapped files and module images.
+  std::vector<MEMORY_BASIC_INFORMATION> EnumerateRegions(bool requireWritable = true, bool privateOnly = false) const
   {
     std::vector<MEMORY_BASIC_INFORMATION> regions;
     uintptr_t                             addr = 0;
@@ -54,7 +56,8 @@ public:
       bool notGuard = (mbi.Protect & PAGE_GUARD) == 0;
       bool notCow   = (mbi.Protect & (PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY)) == 0;
       bool writable = (mbi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)) != 0;
-      if (committed && readable && notGuard && notCow && (!requireWritable || writable)) {
+      bool typeOk   = !privateOnly || mbi.Type == MEM_PRIVATE;
+      if (committed && readable && notGuard && notCow && (!requireWritable || writable) && typeOk) {
         regions.push_back(mbi);
       }
       uintptr_t next = (uintptr_t) mbi.BaseAddress + mbi.RegionSize;
@@ -175,13 +178,30 @@ public:
   std::wstring ReadUtf16(uintptr_t addr, size_t maxChars) const
   {
     std::wstring result;
+    if (maxChars == 0)
+      return result;
+
+    // Fast path: one ReadProcessMemory for the whole string instead of one per char.
+    // Falls back to the per-char loop if the full range isn't readable.
+    std::vector<uint16_t> chars(maxChars);
+    const bool            bulk = ReadBytes(addr, chars.data(), maxChars * sizeof(uint16_t));
+
     for (size_t i = 0; i < maxChars; i++) {
-      auto ch = ReadUInt16(addr + i * 2);
-      if (!ch || *ch == 0)
+      uint16_t ch = 0;
+      if (bulk) {
+        ch = chars[i];
+      }
+      else {
+        auto c = ReadUInt16(addr + i * 2);
+        if (!c)
+          break;
+        ch = *c;
+      }
+      if (ch == 0)
         break;
-      if (*ch < 32 || *ch > 126)
+      if (ch < 32 || ch > 126)
         continue;  // keep it printable-ascii-ish, same filter as the script
-      result.push_back((wchar_t) *ch);
+      result.push_back((wchar_t) ch);
     }
     return result;
   }

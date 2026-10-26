@@ -39,6 +39,7 @@ public:
   }
 
   bool IsStatEnabled(StatType type) const { return m_enabledStats.count(type) > 0; }
+  bool HasEnabledStats() const { return !m_enabledStats.empty(); }
 
   // One-shot: scan for heroes and write selected stats.
   std::string Apply(HeroFinder& finder, const std::vector<float>& customValues)
@@ -46,7 +47,14 @@ public:
     if (m_enabledStats.empty())
       return "[GodMode] No stats selected. Check at least one stat.";
 
-    auto results = finder.FindAll(true);
+    return Apply(finder.FindAll(true), customValues);
+  }
+
+  // Write selected stats into already-located heroes (no scanning).
+  std::string Apply(const std::vector<HeroResult>& results, const std::vector<float>& customValues)
+  {
+    if (m_enabledStats.empty())
+      return "[GodMode] No stats selected. Check at least one stat.";
 
     if (results.empty())
       return "[GodMode] No heroes found in memory. Make sure you are in-game.";

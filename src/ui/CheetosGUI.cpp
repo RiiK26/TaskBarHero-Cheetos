@@ -119,6 +119,7 @@ void CheetosGUI::DrawUI()
       m_mem.Close();
       m_playerDataAddr = 0;
       m_heroFinder.ClearCache();
+      m_antiCheat.Reset();
       AddLog("[System] Detached from game.");
     }
   }
@@ -428,15 +429,11 @@ void CheetosGUI::DrawUI()
     RenderTooltip("Dont close this app while speedhack is enabled, or the game will crash");
   }
 
-  // ImGui Slider for Speed
-  if (m_speedhackEnabled) {
-    ImGui::BeginDisabled();
-  }
+  // ImGui Slider for Speed (can be adjusted dynamically on the fly)
   if (ImGui::SliderFloat("Speed", &m_speedValue, 0.1f, 10.0f, "%.1fx")) {
-    SetSpeedhack(m_speedValue);
-  }
-  if (m_speedhackEnabled) {
-    ImGui::EndDisabled();
+    if (m_speedhackEnabled) {
+      SetSpeedhack(m_speedValue);
+    }
   }
   ImGui::Spacing();
 

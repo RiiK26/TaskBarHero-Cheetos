@@ -26,8 +26,6 @@ struct TimeAnchors
   ULONGLONG tick64Fake{0};
   DWORD     tgtReal{0};
   DWORD     tgtFake{0};
-  ULONGLONG ftReal{0};
-  ULONGLONG ftFake{0};
   float     speed{1.0f};
 };
 
@@ -37,13 +35,11 @@ bool             g_Initialized = false;
 
 uintptr_t g_UnityPlayerBase    = 0;
 uintptr_t g_UnityPlayerEnd     = 0;
-uintptr_t g_GameAssemblyBase   = 0;
-uintptr_t g_GameAssemblyEnd    = 0;
 
 inline void Lock()
 {
   while (g_SpinLock.test_and_set(std::memory_order_acquire)) {
-    _mm_pause();  // Extremely fast hardware thread pause
+    _mm_pause();  // Fast hardware thread pause
   }
 }
 inline void Unlock() { g_SpinLock.clear(std::memory_order_release); }
@@ -52,15 +48,11 @@ typedef BOOL(WINAPI* tQueryPerformanceCounter)(LARGE_INTEGER* lpPerformanceCount
 typedef DWORD(WINAPI* tGetTickCount)();
 typedef ULONGLONG(WINAPI* tGetTickCount64)();
 typedef DWORD(WINAPI* tTimeGetTime)();
-typedef VOID(WINAPI* tGetSystemTimeAsFileTime)(LPFILETIME lpSystemTimeAsFileTime);
-typedef VOID(WINAPI* tGetSystemTimePreciseAsFileTime)(LPFILETIME lpSystemTimeAsFileTime);
 
-tQueryPerformanceCounter        oQueryPerformanceCounter        = nullptr;
-tGetTickCount                   oGetTickCount                   = nullptr;
-tGetTickCount64                 oGetTickCount64                 = nullptr;
-tTimeGetTime                    oTimeGetTime                    = nullptr;
-tGetSystemTimeAsFileTime        oGetSystemTimeAsFileTime        = nullptr;
-tGetSystemTimePreciseAsFileTime oGetSystemTimePreciseAsFileTime = nullptr;
+tQueryPerformanceCounter oQueryPerformanceCounter = nullptr;
+tGetTickCount            oGetTickCount            = nullptr;
+tGetTickCount64          oGetTickCount64          = nullptr;
+tTimeGetTime             oTimeGetTime             = nullptr;
 
 void InitializeAnchors()
 {
@@ -84,15 +76,7 @@ void InitializeAnchors()
     g_Anchors.tgtReal = oTimeGetTime();
     g_Anchors.tgtFake = g_Anchors.tgtReal;
   }
-  if (oGetSystemTimeAsFileTime) {
-    FILETIME ft;
-    oGetSystemTimeAsFileTime(&ft);
-    ULARGE_INTEGER uli;
-    uli.LowPart      = ft.dwLowDateTime;
-    uli.HighPart     = ft.dwHighDateTime;
-    g_Anchors.ftReal = uli.QuadPart;
-    g_Anchors.ftFake = g_Anchors.ftReal;
-  }
+
   g_Anchors.speed = g_SpeedhackEnabled ? g_SpeedMultiplier : 1.0f;
   g_Initialized   = true;
 }
@@ -138,31 +122,14 @@ void CheckSpeedChange()
       g_Anchors.tgtReal = tick;
     }
 
-    if (oGetSystemTimeAsFileTime) {
-      FILETIME ft;
-      oGetSystemTimeAsFileTime(&ft);
-      ULARGE_INTEGER uli;
-      uli.LowPart    = ft.dwLowDateTime;
-      uli.HighPart   = ft.dwHighDateTime;
-      LONGLONG delta = (LONGLONG) (uli.QuadPart - g_Anchors.ftReal);
-      if (delta < 0)
-        delta = 0;
-      g_Anchors.ftFake += (ULONGLONG) ((double) delta * g_Anchors.speed);
-      g_Anchors.ftReal = uli.QuadPart;
-    }
-
     g_Anchors.speed = wantedSpeed;
   }
 }
 
-inline bool IsTargetCaller(uintptr_t caller)
-{
-  if (caller >= g_UnityPlayerBase && caller < g_UnityPlayerEnd)
-    return true;
-  if (caller >= g_GameAssemblyBase && caller < g_GameAssemblyEnd)
-    return true;
-  return false;
-}
+// Restrict time manipulation strictly to UnityPlayer.dll (engine game loop, physics, animations).
+// Never warp GameAssembly.dll: managed C# code contains backend HTTP networking (BACKND / The Backend),
+// token managers (24h JWT expiration), Steam Web API authentication, and retry timeout loops.
+inline bool IsTargetCaller(uintptr_t caller) { return (caller >= g_UnityPlayerBase && caller < g_UnityPlayerEnd); }
 
 BOOL WINAPI hkQueryPerformanceCounter(LARGE_INTEGER* lpPerformanceCount)
 {
@@ -262,86 +229,15 @@ ULONGLONG WINAPI hkGetTickCount64()
   return real;
 }
 
-VOID WINAPI hkGetSystemTimeAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
-{
-  if (!oGetSystemTimeAsFileTime)
-    return;
-  oGetSystemTimeAsFileTime(lpSystemTimeAsFileTime);
-
-  uintptr_t caller = (uintptr_t) GET_CALLER();
-  if (IsTargetCaller(caller)) {
-    Lock();
-    if (!g_Initialized)
-      InitializeAnchors();
-    CheckSpeedChange();
-
-    ULARGE_INTEGER uli;
-    uli.LowPart    = lpSystemTimeAsFileTime->dwLowDateTime;
-    uli.HighPart   = lpSystemTimeAsFileTime->dwHighDateTime;
-
-    LONGLONG delta = (LONGLONG) (uli.QuadPart - g_Anchors.ftReal);
-    if (delta < 0) {
-      uli.QuadPart = g_Anchors.ftFake;
-    }
-    else {
-      uli.QuadPart = g_Anchors.ftFake + (ULONGLONG) ((double) delta * g_Anchors.speed);
-    }
-
-    lpSystemTimeAsFileTime->dwLowDateTime  = uli.LowPart;
-    lpSystemTimeAsFileTime->dwHighDateTime = uli.HighPart;
-    Unlock();
-  }
-}
-
-VOID WINAPI hkGetSystemTimePreciseAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
-{
-  if (!oGetSystemTimePreciseAsFileTime)
-    return;
-  oGetSystemTimePreciseAsFileTime(lpSystemTimeAsFileTime);
-
-  uintptr_t caller = (uintptr_t) GET_CALLER();
-  if (IsTargetCaller(caller)) {
-    Lock();
-    if (!g_Initialized)
-      InitializeAnchors();
-    CheckSpeedChange();
-
-    ULARGE_INTEGER uli;
-    uli.LowPart    = lpSystemTimeAsFileTime->dwLowDateTime;
-    uli.HighPart   = lpSystemTimeAsFileTime->dwHighDateTime;
-
-    LONGLONG delta = (LONGLONG) (uli.QuadPart - g_Anchors.ftReal);
-    if (delta < 0) {
-      uli.QuadPart = g_Anchors.ftFake;
-    }
-    else {
-      uli.QuadPart = g_Anchors.ftFake + (ULONGLONG) ((double) delta * g_Anchors.speed);
-    }
-
-    lpSystemTimeAsFileTime->dwLowDateTime  = uli.LowPart;
-    lpSystemTimeAsFileTime->dwHighDateTime = uli.HighPart;
-    Unlock();
-  }
-}
-
 DWORD WINAPI MainThread(LPVOID lpParam)
 {
-  // Setup module bounds
+  // Setup UnityPlayer bounds only
   HMODULE hUnity = GetModuleHandle("UnityPlayer.dll");
   if (hUnity) {
     MODULEINFO mi;
     if (GetModuleInformation(GetCurrentProcess(), hUnity, &mi, sizeof(mi))) {
       g_UnityPlayerBase = (uintptr_t) mi.lpBaseOfDll;
       g_UnityPlayerEnd  = g_UnityPlayerBase + mi.SizeOfImage;
-    }
-  }
-
-  HMODULE hAssembly = GetModuleHandle("GameAssembly.dll");
-  if (hAssembly) {
-    MODULEINFO mi;
-    if (GetModuleInformation(GetCurrentProcess(), hAssembly, &mi, sizeof(mi))) {
-      g_GameAssemblyBase = (uintptr_t) mi.lpBaseOfDll;
-      g_GameAssemblyEnd  = g_GameAssemblyBase + mi.SizeOfImage;
     }
   }
 
@@ -353,20 +249,7 @@ DWORD WINAPI MainThread(LPVOID lpParam)
   );
   MH_CreateHookApi(L"kernel32.dll", "GetTickCount", (LPVOID) &hkGetTickCount, (LPVOID*) &oGetTickCount);
   MH_CreateHookApi(L"kernel32.dll", "GetTickCount64", (LPVOID) &hkGetTickCount64, (LPVOID*) &oGetTickCount64);
-  MH_CreateHookApi(
-    L"kernel32.dll", "GetSystemTimeAsFileTime", (LPVOID) &hkGetSystemTimeAsFileTime, (LPVOID*) &oGetSystemTimeAsFileTime
-  );
   MH_CreateHookApi(L"winmm.dll", "timeGetTime", (LPVOID) &hkTimeGetTime, (LPVOID*) &oTimeGetTime);
-
-  HMODULE hKernel32 = GetModuleHandle("kernel32.dll");
-  if (hKernel32) {
-    FARPROC pPrecise = GetProcAddress(hKernel32, "GetSystemTimePreciseAsFileTime");
-    if (pPrecise) {
-      MH_CreateHook(
-        (LPVOID) pPrecise, (LPVOID) &hkGetSystemTimePreciseAsFileTime, (LPVOID*) &oGetSystemTimePreciseAsFileTime
-      );
-    }
-  }
 
   MH_EnableHook(MH_ALL_HOOKS);
   return 0;

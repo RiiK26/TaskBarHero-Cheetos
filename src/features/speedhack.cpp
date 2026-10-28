@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <psapi.h>
 #include <cstdint>
+#include <cmath>
 #include <atomic>
 #include <emmintrin.h>
 #include "MinHook.h"
@@ -13,8 +14,10 @@
   #define GET_CALLER() __builtin_return_address(0)
 #endif
 
-extern "C" __declspec(dllexport) float g_SpeedMultiplier  = 1.0f;
-extern "C" __declspec(dllexport) bool  g_SpeedhackEnabled = false;
+extern "C" {
+__declspec(dllexport) float g_SpeedMultiplier  = 1.0f;
+__declspec(dllexport) bool  g_SpeedhackEnabled = false;
+}
 
 struct TimeAnchors
 {
@@ -85,7 +88,7 @@ void CheckSpeedChange()
 {
   float wantedSpeed = g_SpeedhackEnabled ? g_SpeedMultiplier : 1.0f;
 
-  if (wantedSpeed != g_Anchors.speed) {
+  if (std::abs(wantedSpeed - g_Anchors.speed) > 1e-4f) {
     LARGE_INTEGER qpc;
     if (oQueryPerformanceCounter && oQueryPerformanceCounter(&qpc)) {
       LONGLONG delta = qpc.QuadPart - g_Anchors.qpcReal;

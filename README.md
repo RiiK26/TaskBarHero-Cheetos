@@ -3,12 +3,12 @@
 # TaskBarHero - Cheetos
 
 [![Build Status](https://github.com/RiiK26/TaskBarHero-Cheetos/actions/workflows/build.yml/badge.svg)](https://github.com/RiiK26/TaskBarHero-Cheetos/actions)
-[![Cheetos Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FRiiK26%2FTaskBarHero-Cheetos%2Fmain%2Fvcpkg.json&query=%24.version&label=Version&color=blue)](#)
+[![Cheetos Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FRiiK26%2FTaskBarHero-Cheetos%2Fmain%2Fconfig.json&query=%24%5B%27cheetos-version%27%5D&label=Version&color=blue)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20-green)](#)
-[![Game Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FRiiK26%2FTaskBarHero-Cheetos%2Fmain%2Fvcpkg.json&query=%24.%5B%27%24gameversion%27%5D&label=Game%20Version&color=orange)](#)
+[![Game Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FRiiK26%2FTaskBarHero-Cheetos%2Fmain%2Fconfig.json&query=%24%5B%27game-version%27%5D&label=Game%20Version&color=orange)](#)
 
-An internal cheat tool for **TaskBarHero** that working directly into the memory.
+An internal memory manipulation, feature modification, and offset management utility for **TaskBarHero**.
 
 </div>
 
@@ -16,9 +16,9 @@ An internal cheat tool for **TaskBarHero** that working directly into the memory
 
 ## Overview
 
-**TaskBarHero - Cheetos** directly interacts with the game's memory using the Win32 API and IL2CPP metadata to provide a comprehensive suite of enhancements. Everything is controlled from a single lightweight, blazing-fast GUI built with **Dear ImGui**.
+**TaskBarHero - Cheetos** directly interacts with the game's memory using the Win32 API and IL2CPP metadata to provide a comprehensive suite of enhancements. Everything is controlled from a single lightweight, blazing-fast GUI built with **Dear ImGui**, **GLFW**, and **OpenGL3**.
 
-> **Note:** This project has been tested and verified on latest game version. The project will be updated if changes to the game affect the memory offsets.
+The project uses a self-contained vendor dependency model (no package manager required) and an AOB signature engine with centralized struct offset management.
 
 <details>
 <summary>Preview image</summary>
@@ -32,18 +32,19 @@ An internal cheat tool for **TaskBarHero** that working directly into the memory
 ## Features
 
 | Feature | Description | Status | Type |
-|---------|-------------|--------|-------|
-| **Bypass Anti-Cheat** | Neutralizes anticheat detector methods when attached. |<span title="Works">✅</span> | Automatic |
-| **God Mode** | One-shot injection of max HP, Attack Speed, Crit, Armor, and Movement Speed into all active heroes. |<span title="Works">✅</span> | Repeatable |
-| **Rune Unlocker** | Safely unlock and max-level all runes for free. | <span title="Works">✅</span> | Interactive |
-| **Speedhack** | Increases the global speed of the game. | <span title="Works">✅</span> | Toggle |
-| **EXP Multiplier** | Multiplies the EXP earned from killing monsters. |<span title="Works">✅</span>| Interactive |
+|---|---|:---:|---|
+| **Multi-Tier Anti-Cheat Bypass** | Neutralizes CodeStage ACTk detectors, watchdogs, and abuse guards via 15 dynamic AOB signatures. | ✅ | Automatic |
+| **God Mode** | Real-time injection of Max HP, Attack Speed, Crit Chance, Crit Damage, Armor, Movement Speed, and Cast Speed across all heroes. | ✅ | Repeatable |
+| **Rune Unlocker** | Safely discovers, unlocks, and upgrades all runes to maximum levels without corrupting dictionary structures. | ✅ | Interactive |
+| **Speedhack** | High-precision engine delta time scaler injected via MinHook DLL, strictly caller-scoped to `UnityPlayer.dll`. | ✅ | Toggle |
+| **EXP Multiplier** | Real-time hero EXP rate modification using decrypted ACTk primitives. | ✅ | Interactive |
 
-### Technical Capabilities
-- **Seamless GUI:** A beautifully rendered floating window (via OpenGL3/GLFW) for real-time interaction.
-- **Hot-Pluggable:** Connect and disconnect from the game instantly without restarting the tool.
-- **Cross-Platform:** Native Windows `.exe` that runs flawlessly on Linux via Proton/Wine.
-- **Automated Offset Updating:** Ships with Python scripting to effortlessly upgrade IL2CPP offsets after game patches.
+### Architecture & Technical Capabilities
+- **AOB Signatures:** Centralized C++ registry of 22 unique function signatures in `Signatures.h` with masked RIP-relative displacements and branch offsets.
+- **Centralized Struct Offsets:** Single source of truth for all IL2CPP container headers (`List`, `Array`, `Dictionary`, `String`) and game class fields in `Il2CppOffsets.h`.
+- **Zero Package Manager Dependencies:** Completely self-contained within `src/vendor/` (`MinHook`, `Dear ImGui`, `GLFW`). No `vcpkg` required.
+- **Unified 1-Command Update Pipeline:** Automatically scans Steam build updates, checks signatures, validates struct offsets, and compiles binaries via `./scripts/update`.
+- **Wine / Proton Native Compatibility:** Isolated runtime configuration (`imgui.ini` is strictly stored alongside binaries in `build/`).
 
 ---
 
@@ -59,29 +60,26 @@ An internal cheat tool for **TaskBarHero** that working directly into the memory
 <summary>Click here for build instructions</summary>
 
 #### Prerequisites
-- [CMake](https://cmake.org/) (v3.10 or higher)
-- [vcpkg](https://github.com/microsoft/vcpkg) (dependencies are managed automatically)
-- **Windows:** Visual Studio (MSVC) or MinGW-w64
-- **Linux:** MinGW-w64 (for cross-compiling to Windows `.exe`)
+- [CMake](https://cmake.org/) (v3.20 or higher)
+- **Windows:** Visual Studio 2022 (MSVC) or MinGW-w64
+- **Linux:** `x86_64-w64-mingw32-g++` (for cross-compiling to Windows `.exe`)
 
 #### 1. Clone the repository
 ```bash
-git clone --recursive https://github.com/RiiK26/TaskBarHero-Cheetos.git
+git clone https://github.com/RiiK26/TaskBarHero-Cheetos.git
 cd TaskBarHero-Cheetos
 ```
 
-#### 2. Windows (MSVC)
-```powershell
-.\vcpkg\bootstrap-vcpkg.bat
-cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+#### 2. Linux (Cross-compiling via MinGW)
+```bash
+cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
 ```
 
-#### 3. Linux (Cross-compiling via MinGW)
-```bash
-./vcpkg/bootstrap-vcpkg.sh
-cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$PWD/cmake/mingw-toolchain.cmake -DVCPKG_TARGET_TRIPLET=x64-mingw-static -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+#### 3. Windows (MSVC or Native MinGW)
+```powershell
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
 ```
 </details>
 
@@ -89,24 +87,44 @@ cmake --build build -j
 
 ## Usage
 
-Run the tool while **the game** is actively running.
+Run the tool while **TaskBarHero** is actively running.
 
-If you downloaded the `.zip` release, simply execute the launch script from the root folder:
-- **Windows:** `.\launch.bat` *(Run as Administrator)*
-- **Linux:** `./launch_linux.sh` *(Requires `protontricks` to inject into the Steam Proton container)*
+### Using Pre-compiled Release
+- **Windows:** Run `.\launch.bat` *(Run as Administrator)*
+- **Linux / Steam Deck:** Run `./launch_linux.sh` *(Requires `protontricks`)*
 
-### If you built from Source
-The launch scripts are located inside the `scripts/` directory. Run them from the project root:
-- **Windows:** `.\scripts\launch.bat` *(Run as Administrator)*
-- **Linux:** `./scripts/launch_linux.sh` *(Requires `protontricks` to inject into the Steam Proton container)*
+### Using Source Build
+- **Windows:** `.\scripts\launch.bat`
+- **Linux / Steam Deck:** `./scripts/launch_linux.sh`
+
+---
+
+## Automated Game Update Pipeline
+
+When *TaskBarHero* receives an update on Steam, update the offsets and signatures with a single command:
+
+```bash
+# Routine update: checks Steam build ID, scans 22 AOB signatures, and rebuilds
+./scripts/update
+
+# Dry run status check (no modifications)
+./scripts/update --check
+
+# Force update and synchronize all struct offsets against dump.cs
+./scripts/update --force --sync-fields
+```
+
+For advanced update runbooks, see the [Update Workflow Documentation](.agents/workflows/update.md).
+
+---
 
 ## Support & Contributing
 
-Suggestions and contributions are always welcome! If you encounter any issues, bugs, or have any idea for a new feature, please use the **Issues** tab below. If you enjoy using this tool and want to support its development, consider buying me a coffee via [PayPal](https://www.paypal.com/paypalme/MuhamadSyakir)
+Suggestions and contributions are always welcome! If you encounter any issues or have ideas for enhancements, please open an issue:
 
 - **[Report a Bug](../../issues/new?template=bug-report.yml)**
 - **[Request a Feature](../../issues/new?template=feature-request.yml)**
 - **[Ask a Question](../../discussions)**
 
 ## License
-This project is licensed under [MIT License](license)
+This project licensed under [MIT License](LICENSE).

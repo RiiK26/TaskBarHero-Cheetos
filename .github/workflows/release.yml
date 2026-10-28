@@ -32,10 +32,7 @@ jobs:
           SIG_COUNT=$(python3 -c "import json; print(len(json.load(open('config.json'))['signatures']))")
           COMMIT_HASH=$(git rev-parse --short HEAD)
 
-          TAG="${{ github.event.inputs.tag_name }}"
-          if [ -z "$TAG" ]; then
-            TAG="${GITHUB_REF_NAME}"
-          fi
+          TAG="${GITHUB_REF_NAME}"
           if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
             TAG="v${VERSION}"
           fi
@@ -89,7 +86,6 @@ jobs:
           cp build/speedhack.dll "release_pkg/$FOLDER_NAME/"
           cp scripts/launch.bat "release_pkg/$FOLDER_NAME/"
           cp scripts/launch_linux.sh "release_pkg/$FOLDER_NAME/"
-          cp config.json "release_pkg/$FOLDER_NAME/"
           if [ -f build/README.txt ]; then
             cp build/README.txt "release_pkg/$FOLDER_NAME/"
           fi
@@ -157,7 +153,7 @@ jobs:
           | **Cheetos Version** | \`v${VERSION}\` |
           | **Target Game Version** | \`v${GAME_VERSION}\` |
           | **Compatible Steam Build ID** | \`${BUILD_ID}\` |
-          | **Tracked Signatures** | \`${SIGS}\` bulletproof signatures |
+          | **Tracked Signatures** | \`${SIGS}\` signatures |
           | **Release Commit** | [\`${COMMIT}\`](https://github.com/${REPO}/commit/${COMMIT}) |
           | **Package Archive** | \`${ZIP}\` (${ZIP_SIZE}) |
 
@@ -191,18 +187,21 @@ jobs:
           # Update release title and notes
           gh release edit "$MAJOR_VERSION" --title "Cheetos $MAJOR_VERSION" --notes-file release_body.md
 
-          # Remove old zip assets to avoid obsolete versions cluttering the release
+          # Remove old assets to avoid obsolete versions cluttering the release
           OLD_ASSETS=$(gh release view "$MAJOR_VERSION" --json assets -q '.assets[].name' 2>/dev/null || echo "")
           for asset in $OLD_ASSETS; do
             if [[ "$asset" == *.zip ]] && [ "$asset" != "$ZIP_NAME" ]; then
               echo "Removing outdated asset: $asset"
               gh release delete-asset "$MAJOR_VERSION" "$asset" -y || true
+            elif [ "$asset" = "checksums.txt" ]; then
+              echo "Removing redundant checksums asset: $asset"
+              gh release delete-asset "$MAJOR_VERSION" "$asset" -y || true
             fi
           done
 
-          # Upload release package and checksums
-          echo "Uploading $ZIP_NAME and checksums.txt to release $MAJOR_VERSION..."
-          gh release upload "$MAJOR_VERSION" "$ZIP_NAME" checksums.txt --clobber
+          # Upload release package (checksums remain embedded in release notes)
+          echo "Uploading $ZIP_NAME to release $MAJOR_VERSION..."
+          gh release upload "$MAJOR_VERSION" "$ZIP_NAME" --clobber
 
           # Archive older major releases
           ALL_RELEASES=$(gh release list --limit 100 --json tagName -q '.[].tagName')

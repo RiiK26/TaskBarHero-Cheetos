@@ -1,7 +1,7 @@
 {
 	"name": "tbh-cheetos",
-	"version": "2.4.3",
-	"$gameversion": "1.3.1",
+	"version": "2.5.3",
+	"$gameversion": "1.3.2",
 	"dependencies": [
 		"minhook",
 		"glfw3",

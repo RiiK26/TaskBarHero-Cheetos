@@ -206,10 +206,8 @@ std::optional<PlayerDataResult> PlayerDataFinder::Find()
                       continue;
 
                     uintptr_t dictAddr = (uintptr_t) reg.BaseAddress + dictOffset;
-                    if (entriesPtr == 0)
-                      continue;
 
-                    auto entriesLen = m_mem.ReadInt32(entriesPtr + Il2CppArrayOffsets::Length);
+                    auto entriesLen    = m_mem.ReadInt32(entriesPtr + Il2CppArrayOffsets::Length);
                     if (!entriesLen || *entriesLen < val || *entriesLen > 10000)
                       continue;
 

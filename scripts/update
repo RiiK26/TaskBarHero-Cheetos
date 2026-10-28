@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# TaskBarHero Cheetos — Unified Update Runner Entry Point
+# update pipeline: checks Steam updates, scans signatures,
+# synchronizes offsets, and rebuilds binaries.
+# ==============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+cd "$PROJECT_ROOT"
+
+if command -v python3 &>/dev/null; then
+    exec python3 "$PROJECT_ROOT/resources/tools/updater.py" "$@"
+else
+    exec python "$PROJECT_ROOT/resources/tools/updater.py" "$@"
+fi

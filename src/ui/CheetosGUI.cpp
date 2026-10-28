@@ -45,6 +45,18 @@ void CheetosGUI::Run()
   (void) io;
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
 
+  // imgui.ini stored alongside the executable (.exe / .dll)
+  static std::string s_iniPath;
+  char               exePath[MAX_PATH] = {0};
+  if (GetModuleFileNameA(NULL, exePath, MAX_PATH) > 0) {
+    std::string pathStr   = exePath;
+    size_t      lastSlash = pathStr.find_last_of("\\/");
+    if (lastSlash != std::string::npos) {
+      s_iniPath      = pathStr.substr(0, lastSlash + 1) + "imgui.ini";
+      io.IniFilename = s_iniPath.c_str();
+    }
+  }
+
   // Setup Dear ImGui style (Dark Theme)
   ImGui::StyleColorsDark();
 
@@ -206,9 +218,7 @@ void CheetosGUI::DrawUI()
     ImGui::Spacing();
   }
 
-  if (m_isScanning) {
-    ImGui::BeginDisabled();
-  }
+  ImGui::BeginDisabled(m_isScanning);
   if (ImGui::Button("Apply God Mode", ImVec2(250, 20))) {
     if (!m_godMode.HasEnabledStats()) {
       AddLog("[GodMode] No stats selected. Check at least one stat.");
@@ -241,9 +251,7 @@ void CheetosGUI::DrawUI()
       }).detach();
     }
   }
-  if (m_isScanning) {
-    ImGui::EndDisabled();
-  }
+  ImGui::EndDisabled();
 
   // Restore button
   if (m_godModeActive) {

@@ -20,5 +20,7 @@ fi
 
 # The Steam App ID for TaskBarHero
 APP_ID=3678970
-echo "Launching $EXE_PATH via protontricks (AppID: $APP_ID)..."
-PROTON_DEBUG=1 protontricks -c "wine \"$EXE_PATH\"" $APP_ID
+EXE_DIR="$(cd "$(dirname "$EXE_PATH")" && pwd)"
+echo "Launching $EXE_NAME from $EXE_DIR via protontricks (AppID: $APP_ID)..."
+cd "$EXE_DIR"
+PROTON_DEBUG=1 protontricks -c "wine \"$EXE_NAME\"" $APP_ID

@@ -1,24 +1,15 @@
 #pragma once
-#include "../core/ProcessMemory.h"
+#include "Il2CppOffsets.h"
+#include "ProcessMemory.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <vector>
 
 /* -----------------------------------------------------------------------
  * IL2CPP Dictionary<TKey, TValue> reader for specific struct layouts.
- *
- * Dictionary<TKey, TValue> memory layout:
- *   dictPtr + 0x10 -> int[] buckets
- *   dictPtr + 0x18 -> Entry[] entries
- *   dictPtr + 0x20 -> int count
- *
- * Entry<int, object*> memory layout:
- *   0x00: int hashCode
- *   0x04: int next
- *   0x08: int key (TKey)
- *   0x10: uintptr_t value (TValue)
- *   Size: 0x18
+ * Uses centralized Il2CppDictOffsets and Il2CppArrayOffsets from Il2CppOffsets.h.
  * ----------------------------------------------------------------------- */
 class Il2CppDictionaryReader
 {
@@ -32,7 +23,10 @@ public:
   }
 
   // Returns the total number of valid entries in the dictionary.
-  std::optional<int32_t> GetCount(uintptr_t dictPtr) const { return m_mem.ReadInt32(dictPtr + 0x20); }
+  std::optional<int32_t> GetCount(uintptr_t dictPtr) const
+  {
+    return m_mem.ReadInt32(dictPtr + Il2CppDictOffsets::Count);
+  }
 
   // Reads the outer dictionary: Dictionary<int, Dictionary<...>>
   // Returns a vector of pairs: <RuneKey, InnerDictionaryPtr>
@@ -45,17 +39,17 @@ public:
       return result;
     int32_t count        = *countOpt;
 
-    auto entriesArrayPtr = m_mem.ReadPointer(dictPtr + 0x18);
+    auto entriesArrayPtr = m_mem.ReadPointer(dictPtr + Il2CppDictOffsets::Entries);
     if (!entriesArrayPtr || *entriesArrayPtr == 0)
       return result;
 
-    // In an IL2CPP Array, elements start at offset 0x20
-    uintptr_t firstElementAddr = *entriesArrayPtr + 0x20;
-    size_t    entrySize        = 0x18;  // Size of Entry<int, object*>
+    // In an IL2CPP Array, elements start at offset ArrayData (0x20)
+    uintptr_t firstElementAddr = *entriesArrayPtr + Il2CppArrayOffsets::Data;
+    size_t    entrySize        = Il2CppDictOffsets::EntrySizeRef;  // Size of Entry<int, object*> (24 bytes)
 
     // The actual array size might be bigger than count (due to capacity).
     // We can just read until we find `count` valid items or reach an upper bound.
-    auto arrayLen = m_mem.ReadInt32(*entriesArrayPtr + 0x18);
+    auto arrayLen = m_mem.ReadInt32(*entriesArrayPtr + Il2CppArrayOffsets::Length);
     if (!arrayLen || *arrayLen <= 0)
       return result;
 
@@ -64,12 +58,12 @@ public:
     for (int32_t i = 0; i < itemsToRead; i++) {
       uintptr_t entryAddr = firstElementAddr + (i * entrySize);
 
-      auto hashCode       = m_mem.ReadInt32(entryAddr + 0x00);
+      auto hashCode       = m_mem.ReadInt32(entryAddr + Il2CppDictOffsets::EntryHashCode);
       if (!hashCode || *hashCode < 0)
         continue;  // Invalid or empty entry
 
-      auto key = m_mem.ReadInt32(entryAddr + 0x08);
-      auto val = m_mem.ReadPointer(entryAddr + 0x10);
+      auto key = m_mem.ReadInt32(entryAddr + Il2CppDictOffsets::EntryKeyOffset);
+      auto val = m_mem.ReadPointer(entryAddr + Il2CppDictOffsets::EntryValOffsetRef);
 
       if (key && val && *val != 0) {
         result.push_back({*key, *val});

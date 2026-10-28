@@ -114,6 +114,58 @@ public:
   }
 
   // ---------------------------------------------------------------------------
+  // Fast signature scan directly within a named module (e.g. GameAssembly.dll)
+  // ---------------------------------------------------------------------------
+  uintptr_t ScanModulePattern(const std::wstring& moduleName, const std::string& aob) const
+  {
+    auto mod = m_mem.FindModule(moduleName);
+    if (!mod || mod->size == 0)
+      return 0;
+
+    auto pattern = ParsePattern(aob);
+    if (pattern.empty())
+      return 0;
+
+    size_t anchor = 0;
+    while (anchor < pattern.size() && pattern[anchor].wildcard)
+      anchor++;
+    if (anchor == pattern.size())
+      anchor = 0;
+    const bool    allWild       = pattern[anchor].wildcard;
+    const uint8_t anchorVal     = pattern[anchor].value;
+    const size_t  patLen        = pattern.size();
+
+    constexpr size_t kChunkSize = 1024 * 1024;
+    std::unique_ptr<uint8_t[]> buf(new uint8_t[kChunkSize + patLen]);
+
+    for (uintptr_t base = mod->base; base < mod->base + mod->size; base += kChunkSize) {
+      size_t scanLen   = std::min<size_t>(kChunkSize, (mod->base + mod->size) - base);
+      size_t readLen   = std::min<size_t>(scanLen + patLen, (mod->base + mod->size) - base);
+      SIZE_T bytesRead = 0;
+      if (!ReadProcessMemory(m_mem.Handle(), (LPCVOID) base, buf.get(), readLen, &bytesRead) || bytesRead < patLen)
+        continue;
+
+      const size_t   limit = std::min<size_t>(scanLen, bytesRead - patLen + 1);
+      const uint8_t* p     = buf.get();
+      for (size_t off = 0; off < limit; off++) {
+        if (!allWild && p[off + anchor] != anchorVal)
+          continue;
+        bool match = true;
+        for (size_t j = 0; j < patLen; j++) {
+          if (!pattern[j].wildcard && p[off + j] != pattern[j].value) {
+            match = false;
+            break;
+          }
+        }
+        if (match) {
+          return base + off;
+        }
+      }
+    }
+    return 0;
+  }
+
+  // ---------------------------------------------------------------------------
   // Finds every 8-byte aligned slot holding a pointer to ANY of `targets`,
   // in a single pass. Returns target -> referencing addresses (ascending).
   // ---------------------------------------------------------------------------

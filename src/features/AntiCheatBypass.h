@@ -1,5 +1,7 @@
 #pragma once
 #include "../core/ProcessMemory.h"
+#include "../core/AOBScanner.h"
+#include "../core/Signatures.h"
 
 #include <cstdint>
 #include <string>
@@ -19,6 +21,10 @@
  *     - WallHackDetector (Rigidbody, character controller, wireframe shader, raycasts)
  *  2. In-Game Abuse Guards:
  *     - StageBoxRequestAbuseGuard (Sliding-window box opening rate-limiter)
+ *
+ * Resolution Architecture:
+ *  - AOB Signatures: Scans GameAssembly.dll dynamically using wildcard byte patterns.
+ *  - Fallback RVAs: Utilized if a signature fails or during initial offline testing.
  *
  * Technical Note on ObscuredTypes (ObscuredInt, ObscuredFloat, ObscuredDouble, ObscuredLong):
  *  - DO NOT patch op_Implicit entry points directly! In Microsoft x64 calling convention,
@@ -50,10 +56,13 @@ public:
   {
     std::string          name;
     TargetTier           tier;
-    uintptr_t            rva;
+    std::string          signature;
+    uintptr_t            rva = 0;
     std::vector<uint8_t> patchBytes;
     std::vector<uint8_t> originalBytes;
-    bool                 isApplied = false;
+    bool                 isApplied       = false;
+    uintptr_t            resolvedAddress = 0;
+    bool                 resolvedViaSig  = false;
   };
 
   explicit AntiCheatBypass(ProcessMemory& mem) :
@@ -72,7 +81,9 @@ public:
   {
     m_gameAssemblyBase = 0;
     for (auto& t : m_targets) {
-      t.isApplied = false;
+      t.isApplied       = false;
+      t.resolvedAddress = 0;
+      t.resolvedViaSig  = false;
       t.originalBytes.clear();
     }
   }
@@ -91,17 +102,42 @@ public:
     if (m_gameAssemblyBase != modInfo->base || force) {
       m_gameAssemblyBase = modInfo->base;
       for (auto& t : m_targets) {
-        t.isApplied = false;
+        t.isApplied       = false;
+        t.resolvedAddress = 0;
+        t.resolvedViaSig  = false;
         t.originalBytes.clear();
       }
     }
 
+    AOBScanner  scanner(m_mem);
     int         patchCount   = 0;
     int         skippedCount = 0;
     std::string details;
 
     for (auto& t : m_targets) {
-      uintptr_t addr = m_gameAssemblyBase + t.rva;
+      uintptr_t addr    = 0;
+      bool      fromSig = false;
+
+      // 1. Dynamic  Signature Scan
+      if (!t.signature.empty()) {
+        addr = scanner.ScanModulePattern(L"GameAssembly.dll", t.signature);
+        if (addr != 0) {
+          fromSig = true;
+        }
+      }
+
+      // 2. Fallback RVA
+      if (addr == 0 && t.rva != 0) {
+        addr = m_gameAssemblyBase + t.rva;
+      }
+
+      if (addr == 0) {
+        details += "  [Warning] Failed to resolve target: " + t.name + "\n";
+        continue;
+      }
+
+      t.resolvedAddress = addr;
+      t.resolvedViaSig  = fromSig;
 
       // If already patched, skip redundant write
       if (t.isApplied && !force) {
@@ -123,7 +159,8 @@ public:
         if (m_mem.WriteBytes(addr, t.patchBytes.data(), patchSize)) {
           t.isApplied = true;
           patchCount++;
-          details += "  [" + std::string(TierToString(t.tier)) + "] Patched " + t.name + " @ 0x" + ToHex(addr) + "\n";
+          details += "  [" + std::string(TierToString(t.tier)) + "] Patched " + t.name + " @ 0x" + ToHex(addr)
+                   + (fromSig ? " (AOB)" : " (RVA)") + "\n";
         }
 
         // Restore original memory protection
@@ -139,7 +176,7 @@ public:
       return "[AntiCheat] All " + std::to_string(skippedCount) + " target(s) are already active and patched.";
     }
     else {
-      return "[AntiCheat] Failed to patch detectors. Verify GameAssembly.dll memory protections.";
+      return "[AntiCheat] Failed to patch detectors. Verify GameAssembly.dll memory protections.\n" + details;
     }
   }
 
@@ -161,7 +198,7 @@ public:
       if (!t.isApplied || t.originalBytes.empty())
         continue;
 
-      uintptr_t addr       = m_gameAssemblyBase + t.rva;
+      uintptr_t addr       = t.resolvedAddress != 0 ? t.resolvedAddress : (m_gameAssemblyBase + t.rva);
       size_t    patchSize  = t.originalBytes.size();
       DWORD     oldProtect = 0;
 
@@ -215,104 +252,92 @@ private:
     m_targets.clear();
 
     // Standard x86_64 NULL RET stub: `xor eax, eax; ret` (31 C0 C3)
-    // - Safely returns false (0) for bool query methods
-    // - Safely returns void for void methods
-    // - Preserves caller stack and register constraints
     const std::vector<uint8_t> nullRet = {0x31, 0xC0, 0xC3};
 
     // ---------------------------------------------------------------------
     // Tier 1: ACTk Master Event Dispatcher
-    // ACTkDetectorBase<object>.bbkt (Slot 11) is the core method that raises
-    // detectionEvent. If neutralized, NO detector can trigger a cheat response.
     // ---------------------------------------------------------------------
     m_targets.push_back(
-      {"ACTkDetectorBase.OnCheatingDetected", TargetTier::MasterDispatch,
-       0x1A1C480,  // @RVA[ACTkDetectorBase<object>.bbkt]
+      {Signatures::ACTkDetectorBase_OnCheatingDetected.name, TargetTier::MasterDispatch,
+       Signatures::ACTkDetectorBase_OnCheatingDetected.aob, Signatures::ACTkDetectorBase_OnCheatingDetected.rva,
        nullRet}
     );
 
     // ---------------------------------------------------------------------
-    // Tier 2: Detector Core Routines (StartDetection / DetectorCore / bbla)
-    // Prevents individual detectors from spawning background threads or coroutines.
+    // Tier 2: Detector Core Routines
     // ---------------------------------------------------------------------
     m_targets.push_back(
-      {"InjectionDetector.DetectorCore", TargetTier::DetectorCore,
-       0x763230,  // @RVA[InjectionDetector.bbla]
+      {Signatures::InjectionDetector_DetectorCore.name, TargetTier::DetectorCore,
+       Signatures::InjectionDetector_DetectorCore.aob, Signatures::InjectionDetector_DetectorCore.rva, nullRet}
+    );
+    m_targets.push_back(
+      {Signatures::SpeedHackDetector_DetectorCore.name, TargetTier::DetectorCore,
+       Signatures::SpeedHackDetector_DetectorCore.aob, Signatures::SpeedHackDetector_DetectorCore.rva, nullRet}
+    );
+    m_targets.push_back(
+      {Signatures::TimeCheatingDetector_DetectorCore.name, TargetTier::DetectorCore,
+       Signatures::TimeCheatingDetector_DetectorCore.aob, Signatures::TimeCheatingDetector_DetectorCore.rva, nullRet}
+    );
+    m_targets.push_back(
+      {Signatures::ObscuredCheatingDetector_DetectorCore.name, TargetTier::DetectorCore,
+       Signatures::ObscuredCheatingDetector_DetectorCore.aob, Signatures::ObscuredCheatingDetector_DetectorCore.rva,
        nullRet}
     );
     m_targets.push_back(
-      {"SpeedHackDetector.DetectorCore", TargetTier::DetectorCore,
-       0x7651D0,  // @RVA[SpeedHackDetector.bbla]
-       nullRet}
-    );
-    m_targets.push_back(
-      {"TimeCheatingDetector.DetectorCore", TargetTier::DetectorCore,
-       0x767160,  // @RVA[TimeCheatingDetector.bbla]
-       nullRet}
-    );
-    m_targets.push_back(
-      {"ObscuredCheatingDetector.DetectorCore", TargetTier::DetectorCore,
-       0x763620,  // @RVA[ObscuredCheatingDetector.bbla]
-       nullRet}
-    );
-    m_targets.push_back(
-      {"WallHackDetector.DetectorCore", TargetTier::DetectorCore,
-       0x76C7C0,  // @RVA[WallHackDetector.bbla]
-       nullRet}
+      {Signatures::WallHackDetector_DetectorCore.name, TargetTier::DetectorCore,
+       Signatures::WallHackDetector_DetectorCore.aob, Signatures::WallHackDetector_DetectorCore.rva, nullRet}
     );
 
     // ---------------------------------------------------------------------
-    // Tier 3: Frame-by-Frame Polling Watchdogs (Update / FixedUpdate)
-    // Neutralizes per-frame delta checks in case detectors were already initialized.
+    // Tier 3: Frame-by-Frame Polling Watchdogs
     // ---------------------------------------------------------------------
     m_targets.push_back(
-      {"SpeedHackDetector.Update", TargetTier::PollingWatchdog,
-       0x764D50,  // @RVA[SpeedHackDetector.Update]
+      {Signatures::SpeedHackDetector_Update.name, TargetTier::PollingWatchdog, Signatures::SpeedHackDetector_Update.aob,
+       Signatures::SpeedHackDetector_Update.rva, nullRet}
+    );
+    m_targets.push_back(
+      {Signatures::TimeCheatingDetector_Update.name, TargetTier::PollingWatchdog,
+       Signatures::TimeCheatingDetector_Update.aob, Signatures::TimeCheatingDetector_Update.rva, nullRet}
+    );
+    m_targets.push_back(
+      {Signatures::TimeCheatingDetector_CheckOnlineTime.name, TargetTier::PollingWatchdog,
+       Signatures::TimeCheatingDetector_CheckOnlineTime.aob, Signatures::TimeCheatingDetector_CheckOnlineTime.rva,
        nullRet}
     );
     m_targets.push_back(
-      {"TimeCheatingDetector.Update", TargetTier::PollingWatchdog,
-       0x766B00,  // @RVA[TimeCheatingDetector.Update]
-       nullRet}
+      {Signatures::WallHackDetector_Update.name, TargetTier::PollingWatchdog, Signatures::WallHackDetector_Update.aob,
+       Signatures::WallHackDetector_Update.rva, nullRet}
     );
     m_targets.push_back(
-      {"WallHackDetector.Update", TargetTier::PollingWatchdog,
-       0x76C310,  // @RVA[WallHackDetector.Update]
-       nullRet}
-    );
-    m_targets.push_back(
-      {"WallHackDetector.FixedUpdate", TargetTier::PollingWatchdog,
-       0x76B860,  // @RVA[WallHackDetector.FixedUpdate]
-       nullRet}
+      {Signatures::WallHackDetector_FixedUpdate.name, TargetTier::PollingWatchdog,
+       Signatures::WallHackDetector_FixedUpdate.aob, Signatures::WallHackDetector_FixedUpdate.rva, nullRet}
     );
 
     // ---------------------------------------------------------------------
     // Tier 4: Obscured Types Direct Violation Receivers
-    // Directly silences callbacks fired when honeypots or hash mismatches occur.
     // ---------------------------------------------------------------------
     m_targets.push_back(
-      {"ObscuredCheatingDetector.OnCheatingType", TargetTier::ViolationHandler,
-       0x7640F0,  // @RVA[ObscuredCheatingDetector.bblw]
+      {Signatures::ObscuredCheatingDetector_OnCheatingType.name, TargetTier::ViolationHandler,
+       Signatures::ObscuredCheatingDetector_OnCheatingType.aob, Signatures::ObscuredCheatingDetector_OnCheatingType.rva,
        nullRet}
     );
     m_targets.push_back(
-      {"ObscuredCheatingDetector.OnCheatingValue", TargetTier::ViolationHandler,
-       0x7641D0,  // @RVA[ObscuredCheatingDetector.bblx]
-       nullRet}
+      {Signatures::ObscuredCheatingDetector_OnCheatingValue.name, TargetTier::ViolationHandler,
+       Signatures::ObscuredCheatingDetector_OnCheatingValue.aob,
+       Signatures::ObscuredCheatingDetector_OnCheatingValue.rva, nullRet}
     );
 
     // ---------------------------------------------------------------------
     // Tier 5: Custom In-Game Anti-Abuse Guards
-    // Guards against client-side multi-minute penalty lockouts during batch box opening.
     // ---------------------------------------------------------------------
     m_targets.push_back(
-      {"StageBoxRequestAbuseGuard.IsBlocked", TargetTier::CustomGuard,
-       0x8BE380,  // @RVA[StageBoxRequestAbuseGuard.hug] -> forces false
+      {Signatures::StageBoxRequestAbuseGuard_IsBlocked.name, TargetTier::CustomGuard,
+       Signatures::StageBoxRequestAbuseGuard_IsBlocked.aob, Signatures::StageBoxRequestAbuseGuard_IsBlocked.rva,
        nullRet}
     );
     m_targets.push_back(
-      {"StageBoxRequestAbuseGuard.RecordRequest", TargetTier::CustomGuard,
-       0x8BE480,  // @RVA[StageBoxRequestAbuseGuard.huh] -> suppresses request accumulation
+      {Signatures::StageBoxRequestAbuseGuard_RecordRequest.name, TargetTier::CustomGuard,
+       Signatures::StageBoxRequestAbuseGuard_RecordRequest.aob, Signatures::StageBoxRequestAbuseGuard_RecordRequest.rva,
        nullRet}
     );
   }

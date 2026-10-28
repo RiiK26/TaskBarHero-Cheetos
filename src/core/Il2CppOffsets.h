@@ -213,15 +213,28 @@ struct Il2CppStringOffsets
 // Standard IL2CPP Dictionary<TKey, TValue> layout
 struct Il2CppDictOffsets
 {
-  static constexpr int32_t Buckets        = 0x10;  // int[] _buckets
-  static constexpr int32_t Entries        = 0x18;  // Entry[] _entries
-  static constexpr int32_t Count          = 0x20;  // int _count
-  static constexpr int32_t ArrayLength    = 0x18;  // array header length
-  static constexpr int32_t ArrayData      = 0x20;  // array data start
-  static constexpr int32_t FreeCount      = 0x28;  // int _freeCount
-  static constexpr int32_t EntrySize      = 16;    // { int hashCode; int next; TKey; TValue }
-  static constexpr int32_t EntryKeyOffset = 8;     // offset to key within entry
-  static constexpr int32_t EntryValOffset = 12;    // offset to value within entry
+  static constexpr int32_t Buckets   = 0x10;  // int[] _buckets
+  static constexpr int32_t Entries   = 0x18;  // Entry[] _entries
+  static constexpr int32_t Count     = 0x20;  // int _count
+  static constexpr int32_t FreeCount = 0x28;  // int _freeCount
+
+  // Entry common fields
+  static constexpr int32_t EntryHashCode  = 0x00;  // int hashCode
+  static constexpr int32_t EntryNext      = 0x04;  // int next
+  static constexpr int32_t EntryKeyOffset = 0x08;  // offset to key (TKey) within entry
+
+  // Value-type value entries (e.g. Dictionary<StatType, float> or Dictionary<int, int>)
+  static constexpr int32_t EntryValOffset = 0x0C;  // offset to value within 4-byte entry (12)
+  static constexpr int32_t EntrySize      = 16;    // 16 bytes: { int32 hashCode; int32 next; int32 key; float value; }
+
+  // Reference-type value entries (e.g. Dictionary<int, object*>)
+  static constexpr int32_t EntryValOffsetRef = 0x10;  // offset to value within pointer entry (16)
+  static constexpr int32_t EntrySizeRef =
+    24;  // 24 bytes (0x18): { int32 hashCode; int32 next; int32 key; int32 pad; uintptr_t value; }
+
+  // Array header convenience aliases
+  static constexpr int32_t ArrayLength = 0x18;  // array header length
+  static constexpr int32_t ArrayData   = 0x20;  // array data start
 };
 
 // Global instance accessor

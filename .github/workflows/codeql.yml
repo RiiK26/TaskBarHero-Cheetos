@@ -1,0 +1,74 @@
+name: "CodeQL Analysis"
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL Static Security Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: 'c-cpp'
+          queries: security-and-quality
+
+      - name: Install MinGW & Build Tools
+        run: |
+          sudo apt-get -o Acquire::ForceIPv4=true update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true install -y \
+            mingw-w64 cmake ninja-build
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+                -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-toolchain.cmake \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build with CodeQL Interception
+        run: cmake --build build -j$(nproc)
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:c-cpp"
+          upload: false
+          output: results
+
+      - name: Filter Out Vendor Alerts
+        uses: advanced-security/filter-sarif@v1
+        with:
+          patterns: |
+            -src/vendor/**
+          input: results/cpp.sarif
+          output: results/cpp.sarif
+
+      - name: Upload SARIF as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sarif-results
+          path: results
+          retention-days: 3
+
+      - name: Upload Clean SARIF to Security Tab
+        uses: github/codeql-action/upload-sarif@v4
+        continue-on-error: true
+        with:
+          sarif_file: results/cpp.sarif
+          category: "/language:c-cpp"

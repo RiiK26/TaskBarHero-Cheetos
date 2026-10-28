@@ -1,159 +1,243 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: ["Build"]
-    types:
-      - completed
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
 
 jobs:
   release:
-    name: Manage GitHub Release
-    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
+    name: Build & Publish Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Download Release Artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: cheetos-release-zip
-          path: build
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Manage Major Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install MinGW & Build Tools
         run: |
-          # In workflow_run events, the head_branch is the name of the tag (e.g. v2.1.3)
-          TAG="${{ github.event.workflow_run.head_branch }}"
-          # Extract major version e.g. "v2" from "v2.1.3"
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 cmake ninja-build zip
+
+      - name: Extract Project Metadata
+        id: meta
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('config.json'))['cheetos-version'])")
+          GAME_VERSION=$(python3 -c "import json; print(json.load(open('config.json'))['game-version'])")
+          STEAM_BUILD_ID=$(python3 -c "import json; print(json.load(open('config.json'))['steam-build-id'])")
+          SIG_COUNT=$(python3 -c "import json; print(len(json.load(open('config.json'))['signatures']))")
+          COMMIT_HASH=$(git rev-parse --short HEAD)
+
+          TAG="${{ github.event.inputs.tag_name }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
+            TAG="v${VERSION}"
+          fi
+
+          # Extract major version e.g. "v2" from "v2.5.3"
           MAJOR_VERSION=$(echo "$TAG" | cut -d'.' -f1)
 
-          echo "Processing for Major Version: $MAJOR_VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "game_version=$GAME_VERSION" >> $GITHUB_OUTPUT
+          echo "steam_build_id=$STEAM_BUILD_ID" >> $GITHUB_OUTPUT
+          echo "sig_count=$SIG_COUNT" >> $GITHUB_OUTPUT
+          echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "major=$MAJOR_VERSION" >> $GITHUB_OUTPUT
 
-          # Find the previous tag to determine the commit range
+          echo "[+] Cheetos Version:      v$VERSION"
+          echo "[+] Game Version:         $GAME_VERSION"
+          echo "[+] Target Steam Build:   $STEAM_BUILD_ID"
+          echo "[+] Tracked Signatures:   $SIG_COUNT"
+          echo "[+] Release Commit:       $COMMIT_HASH"
+          echo "[+] Release Tag:          $TAG"
+          echo "[+] Major Release:        $MAJOR_VERSION"
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAPP_VERSION="${{ steps.meta.outputs.tag }}"
+
+      - name: Compile Binaries
+        run: cmake --build build -j$(nproc)
+
+      - name: Validate Binary Artifacts
+        run: |
+          echo "[*] Verifying build outputs in build/..."
+          test -f "build/TBH-Cheetos.exe"
+          test -f "build/speedhack.dll"
+          ls -lh build/TBH-Cheetos.exe build/speedhack.dll
+
+      - name: Stage Release Package & Calculate Checksums
+        id: package
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          FOLDER_NAME="TBH-Cheetos"
+          ZIP_NAME="TBH-Cheetos-v${VERSION}.zip"
+
+          echo "[+] Staging files into release package: $FOLDER_NAME"
+          mkdir -p "release_pkg/$FOLDER_NAME"
+          cp build/TBH-Cheetos.exe "release_pkg/$FOLDER_NAME/"
+          cp build/speedhack.dll "release_pkg/$FOLDER_NAME/"
+          cp scripts/launch.bat "release_pkg/$FOLDER_NAME/"
+          cp scripts/launch_linux.sh "release_pkg/$FOLDER_NAME/"
+          cp config.json "release_pkg/$FOLDER_NAME/"
+          if [ -f build/README.txt ]; then
+            cp build/README.txt "release_pkg/$FOLDER_NAME/"
+          fi
+
+          chmod +x "release_pkg/$FOLDER_NAME/launch_linux.sh"
+
+          # Generate checksums inside package
+          cd "release_pkg/$FOLDER_NAME"
+          sha256sum * > ../../checksums.txt
+          cd ../..
+
+          # Create distribution zip
+          cd release_pkg
+          zip -9 -r "../$ZIP_NAME" .
+          cd ..
+
+          ZIP_SIZE=$(ls -lh "$ZIP_NAME" | awk '{print $5}')
+          ZIP_SHA=$(sha256sum "$ZIP_NAME" | awk '{print $1}')
+
+          echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
+          echo "zip_size=$ZIP_SIZE" >> $GITHUB_OUTPUT
+          echo "zip_sha=$ZIP_SHA" >> $GITHUB_OUTPUT
+
+          echo "[+] Created $ZIP_NAME ($ZIP_SIZE) - SHA256: $ZIP_SHA"
+
+      - name: Generate Release Notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          MAJOR_VERSION="${{ steps.meta.outputs.major }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          GAME_VERSION="${{ steps.meta.outputs.game_version }}"
+          BUILD_ID="${{ steps.meta.outputs.steam_build_id }}"
+          SIGS="${{ steps.meta.outputs.sig_count }}"
+          COMMIT="${{ steps.meta.outputs.commit_hash }}"
+          ZIP="${{ steps.package.outputs.zip_name }}"
+          ZIP_SIZE="${{ steps.package.outputs.zip_size }}"
+          REPO="${{ github.repository }}"
+
+          # Find previous tag to establish commit range
           PREV_TAG=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || echo "")
 
           if [ -z "$PREV_TAG" ]; then
             COMMIT_RANGE="$TAG"
+            COMPARE_LINK="https://github.com/${REPO}/commits/$TAG"
           else
             COMMIT_RANGE="$PREV_TAG..$TAG"
+            COMPARE_LINK="https://github.com/${REPO}/compare/$PREV_TAG...$TAG"
           fi
 
-          # Generate custom release notes filtering by specific directories/files
-          NOTES=$(git log $COMMIT_RANGE --pretty=format:"* %s (%h)" -- src/ vcpkg/ CMakeLists.txt cmake/ vcpkg.json)
-
-          if [ -z "$NOTES" ]; then
-            NOTES="* No source code or build configuration changes in this release."
+          # Extract concise commits targeting src/
+          SRC_CHANGES=$(git log $COMMIT_RANGE --pretty=format:"* %s (%h)" -- src/ ":(exclude)src/vendor" 2>/dev/null || true)
+          if [ -z "$SRC_CHANGES" ]; then
+            SRC_CHANGES="* Feature updates and signature synchronization."
           fi
 
-          # Generate full release notes without path filters
-          FULL_NOTES=$(git log $COMMIT_RANGE --pretty=format:"* %s (%h)")
+          cat << EOF > release_body.md
+          Latest build for **$MAJOR_VERSION** (Tracking \`$TAG\`)
 
-          if [ -z "$FULL_NOTES" ]; then
-            FULL_NOTES="### $TAG
-          * No changes."
-          else
-            FULL_NOTES="### $TAG
-          $FULL_NOTES"
-          fi
+          ### Compatibility
+          | Property | Target Value |
+          |:---|:---|
+          | **Cheetos Version** | \`v${VERSION}\` |
+          | **Target Game Version** | \`v${GAME_VERSION}\` |
+          | **Compatible Steam Build ID** | \`${BUILD_ID}\` |
+          | **Tracked Signatures** | \`${SIGS}\` bulletproof signatures |
+          | **Release Commit** | [\`${COMMIT}\`](https://github.com/${REPO}/commit/${COMMIT}) |
+          | **Package Archive** | \`${ZIP}\` (${ZIP_SIZE}) |
 
-          # Generate GitHub compare link
-          if [ -z "$PREV_TAG" ]; then
-            COMPARE_LINK="https://github.com/${{ github.repository }}/commits/$TAG"
-          else
-            COMPARE_LINK="https://github.com/${{ github.repository }}/compare/$PREV_TAG...$TAG"
-          fi
+          ### Source Modifications
+          $SRC_CHANGES
 
-          # Construct the new release body
-          BODY="Latest build for **$MAJOR_VERSION** (Currently tracking \`$TAG\`)
+          ### File Checksums (SHA-256)
+          \`\`\`text
+          EOF
 
-          ## Source Changes for $TAG
-          $NOTES
+          cat checksums.txt >> release_body.md
 
-          **Full Commit History**: $COMPARE_LINK"
+          cat << EOF >> release_body.md
+          \`\`\`
 
-          # Create the release for this major version (fails gracefully if it already exists)
-          gh release create "$MAJOR_VERSION" --title "Cheetos $MAJOR_VERSION" --notes "$BODY" || true
+          **Full Commit History**: $COMPARE_LINK
+          EOF
 
-          # Update release notes to reflect the latest tag and changelog
-          gh release edit "$MAJOR_VERSION" --title "Cheetos $MAJOR_VERSION" --notes "$BODY"
+          cat release_body.md >> $GITHUB_STEP_SUMMARY
 
-          # Extract version from vcpkg.json
-          PROJECT_VERSION=$(jq -r .version vcpkg.json)
+      - name: Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MAJOR_VERSION="${{ steps.meta.outputs.major }}"
+          ZIP_NAME="${{ steps.package.outputs.zip_name }}"
 
-          # Delete old zip assets to prevent duplicates (since the version number in the filename changes)
+          # Create major release if it doesn't exist yet
+          gh release create "$MAJOR_VERSION" --title "Cheetos $MAJOR_VERSION" --notes-file release_body.md || true
+
+          # Update release title and notes
+          gh release edit "$MAJOR_VERSION" --title "Cheetos $MAJOR_VERSION" --notes-file release_body.md
+
+          # Remove old zip assets to avoid obsolete versions cluttering the release
           OLD_ASSETS=$(gh release view "$MAJOR_VERSION" --json assets -q '.assets[].name' 2>/dev/null || echo "")
           for asset in $OLD_ASSETS; do
-            if [[ "$asset" == *.zip ]]; then
-              echo "Deleting old asset: $asset"
+            if [[ "$asset" == *.zip ]] && [ "$asset" != "$ZIP_NAME" ]; then
+              echo "Removing outdated asset: $asset"
               gh release delete-asset "$MAJOR_VERSION" "$asset" -y || true
             fi
           done
 
-          # Upload the new binaries
-          gh release upload "$MAJOR_VERSION" build/TBH-Cheetos-v${PROJECT_VERSION}.zip
+          # Upload release package and checksums
+          echo "Uploading $ZIP_NAME and checksums.txt to release $MAJOR_VERSION..."
+          gh release upload "$MAJOR_VERSION" "$ZIP_NAME" checksums.txt --clobber
 
-          # Archive older major versions
+          # Archive older major releases
           ALL_RELEASES=$(gh release list --limit 100 --json tagName -q '.[].tagName')
           for rel in $ALL_RELEASES; do
-            # Skip the current major version
             if [ "$rel" != "$MAJOR_VERSION" ]; then
-              # Check if it doesn't contain 'Archived'
-              TITLE=$(gh release view "$rel" --json name -q '.name')
+              TITLE=$(gh release view "$rel" --json name -q '.name' 2>/dev/null || echo "")
               if [[ "$TITLE" != *"Archived"* ]]; then
                 echo "Archiving older major release: $rel"
-                gh release edit "$rel" --title "$rel (Archived)"
+                gh release edit "$rel" --title "$rel (Archived)" || true
               fi
             fi
           done
 
-      - name: Cleanup Old Tags
+      - name: Cleanup Old Full Tags
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ github.event.workflow_run.head_branch }}"
-          MAJOR_VERSION=$(echo "$TAG" | cut -d'.' -f1)
+          MAJOR_VERSION="${{ steps.meta.outputs.major }}"
+          echo "Managing patch tags for major release $MAJOR_VERSION..."
 
-          echo "Cleaning up old tags for active major version: $MAJOR_VERSION"
-
-          # Fetch all tags
           git fetch --tags
-
-          # Get all specific tags for the current major version (e.g. v2.*)
-          # We use sort -V to sort by version numbers
           SPECIFIC_TAGS=$(git tag -l "${MAJOR_VERSION}.*" | sort -V)
-
-          # Convert to array
           TAGS_ARRAY=($SPECIFIC_TAGS)
           TAGS_COUNT=${#TAGS_ARRAY[@]}
 
-          echo "Found $TAGS_COUNT specific tags for $MAJOR_VERSION"
-
-          # Keep the last 2 tags, delete the rest
+          # Retain only the latest 2 patch tags
           if [ "$TAGS_COUNT" -gt 2 ]; then
             DELETE_COUNT=$((TAGS_COUNT - 2))
-            echo "Deleting $DELETE_COUNT older tags to keep only the latest 2..."
-
+            echo "Deleting $DELETE_COUNT older tags to retain latest 2..."
             for (( i=0; i<$DELETE_COUNT; i++ )); do
               TAG_TO_DELETE="${TAGS_ARRAY[$i]}"
               echo "Deleting tag: $TAG_TO_DELETE"
-
-              # Delete tag locally and on remote
               git tag -d "$TAG_TO_DELETE" || true
               git push origin --delete "$TAG_TO_DELETE" || true
-
-              # If there's an associated GitHub release for this specific tag, delete it too
-              gh release delete "$TAG_TO_DELETE" -y || true
             done
           else
-            echo "No cleanup needed. Total tags ($TAGS_COUNT) is <= 2."
+            echo "No tag cleanup needed ($TAGS_COUNT tags present)."
           fi

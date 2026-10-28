@@ -2,7 +2,7 @@
 
 # TaskBarHero - Cheetos
 
-[![Build Status](https://github.com/RiiK26/TaskBarHero-Cheetos/actions/workflows/build.yml/badge.svg)](https://github.com/RiiK26/TaskBarHero-Cheetos/actions)
+[![Release Status](https://github.com/RiiK26/TaskBarHero-Cheetos/actions/workflows/release.yml/badge.svg)](https://github.com/RiiK26/TaskBarHero-Cheetos/actions)
 [![Cheetos Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FRiiK26%2FTaskBarHero-Cheetos%2Fmain%2Fconfig.json&query=%24%5B%27cheetos-version%27%5D&label=Version&color=blue)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20-green)](#)

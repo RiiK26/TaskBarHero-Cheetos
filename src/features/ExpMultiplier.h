@@ -2,6 +2,8 @@
 #include "../core/ProcessMemory.h"
 #include <string>
 
+class HeroFinder;
+
 class ExpMultiplier
 {
 public:
@@ -15,6 +17,7 @@ public:
   };
 
   Result ApplyMaxExp(float multiplier);
+  Result ApplyMaxExp(HeroFinder& finder, float multiplier);
 
 private:
   ProcessMemory& m_mem;

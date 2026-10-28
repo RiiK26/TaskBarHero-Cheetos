@@ -218,13 +218,12 @@ void CheetosGUI::DrawUI()
 
       // Capture custom values by value so the thread can access them safely
       std::vector<float> valuesToApply = m_statValues;
-      bool               forceRescan   = m_forceHeroRescan;
 
-      std::thread([this, valuesToApply, forceRescan]() {
+      std::thread([this, valuesToApply]() {
         auto start = std::chrono::steady_clock::now();
 
-        // One lookup shared by backup + apply (cached addresses are re-validated)
-        auto heroes = m_heroFinder.FindAll(true, forceRescan);
+        // Fast scan by default: cached addresses if available, otherwise fast parallel scan
+        auto heroes = m_heroFinder.FindAll(true);
         bool cached = m_heroFinder.WasLastFromCache();
 
         // Save original stats BEFORE applying god mode
@@ -257,12 +256,6 @@ void CheetosGUI::DrawUI()
     if (ImGui::IsItemHovered())
       RenderTooltip("Restores original stat values");
   }
-
-  ImGui::Checkbox("Fast Scan", &m_forceHeroRescan);
-  ImGui::SameLine();
-  ImGui::TextDisabled("(?)");
-  if (ImGui::IsItemHovered())
-    RenderTooltip("make scanning faster");
 
   ImGui::Spacing();
 
@@ -462,7 +455,7 @@ void CheetosGUI::DrawUI()
     AddLog("[EXP Multiplier] Applying Multiplier... (Wait a moment)");
     float multiToApply = m_expMultiplierValue;
     std::thread([this, multiToApply]() {
-      auto res = m_expMultiplier.ApplyMaxExp(multiToApply);
+      auto res = m_expMultiplier.ApplyMaxExp(m_heroFinder, multiToApply);
       PostLogFromThread(res.msg);
     }).detach();
   }

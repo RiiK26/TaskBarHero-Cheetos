@@ -7,10 +7,12 @@
 #include <cstdint>
 #include <cstring>
 #include <cmath>
+#include <cstdio>
 #include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 #include <memory>
 
@@ -18,6 +20,14 @@
 inline uint64_t LoadU64(const uint8_t* p)
 {
   uint64_t v;
+  std::memcpy(&v, p, sizeof(v));
+  return v;
+}
+
+// Unaligned-safe 32-bit load from a scan buffer.
+inline uint32_t LoadU32(const uint8_t* p)
+{
+  uint32_t v;
   std::memcpy(&v, p, sizeof(v));
   return v;
 }
@@ -50,6 +60,13 @@ inline std::vector<PatternByte> ParsePattern(const std::string& aob)
 
 // Equivalent to CE's AOBScan(pattern, "+W-C"): scans committed/readable
 // (optionally writable) regions of the target process for a byte pattern.
+//
+// Every scan in this class runs on the same engine (ScanStrided):
+//  - memory is read in 1 MB chunks (no giant per-region buffers, and an
+//    unreadable page only loses one chunk instead of a whole region),
+//  - chunks are distributed across worker threads,
+//  - the match test is an inlined predicate, so one pass can look for many
+//    targets at once.
 class AOBScanner
 {
 public:
@@ -58,188 +75,159 @@ public:
   {
   }
 
-  // requireWritable mirrors "+W" in CE's protection flags string.
-  std::vector<uintptr_t> Scan(const std::vector<PatternByte>& pattern, bool requireWritable = true) const
+  // ---------------------------------------------------------------------------
+  // Byte-pattern scan (any alignment). requireWritable mirrors "+W" in CE's
+  // protection flags string.
+  // ---------------------------------------------------------------------------
+  std::vector<uintptr_t>
+  Scan(const std::vector<PatternByte>& pattern, bool requireWritable = true, bool privateOnly = false) const
   {
-    std::vector<uintptr_t> hits;
     if (pattern.empty())
-      return hits;
+      return {};
 
-    auto regions         = m_mem.EnumerateRegions(requireWritable);
+    // Anchor on the first concrete byte for a cheap early reject.
+    size_t anchor = 0;
+    while (anchor < pattern.size() && pattern[anchor].wildcard)
+      anchor++;
+    if (anchor == pattern.size())
+      anchor = 0;  // all wildcards: anchor check below is skipped
+    const bool    allWild   = pattern[anchor].wildcard;
+    const uint8_t anchorVal = pattern[anchor].value;
 
-    size_t maxRegionSize = 0;
-    for (const auto& mbi : regions) {
-      if (mbi.RegionSize > maxRegionSize && mbi.RegionSize <= (256ull * 1024 * 1024))
-        maxRegionSize = mbi.RegionSize;
-    }
-    if (maxRegionSize == 0)
-      return hits;
-
-    std::unique_ptr<uint8_t[]> buf(new uint8_t[maxRegionSize]);
-
-    for (const auto& mbi : regions) {
-      size_t regionSize = mbi.RegionSize;
-      if (regionSize == 0 || regionSize > maxRegionSize)
-        continue;  // skip absurd regions
-
-      SIZE_T bytesRead = 0;
-      if (!ReadProcessMemory(m_mem.Handle(), mbi.BaseAddress, buf.get(), regionSize, &bytesRead) || bytesRead == 0) {
-        continue;
-      }
-
-      if (bytesRead < pattern.size())
-        continue;
-
-      for (size_t i = 0; i + pattern.size() <= bytesRead; i++) {
-        bool match = true;
+    return ScanStrided(
+      [&pattern, anchor, anchorVal, allWild](const uint8_t* p) {
+        if (!allWild && p[anchor] != anchorVal)
+          return false;
         for (size_t j = 0; j < pattern.size(); j++) {
-          if (!pattern[j].wildcard && buf[i + j] != pattern[j].value) {
-            match = false;
-            break;
-          }
+          if (!pattern[j].wildcard && p[j] != pattern[j].value)
+            return false;
         }
-        if (match) {
-          hits.push_back((uintptr_t) mbi.BaseAddress + i);
-        }
-      }
+        return true;
+      },
+      pattern.size(), 1, requireWritable, privateOnly
+    );
+  }
+
+  std::vector<uintptr_t> Scan(const std::string& aob, bool requireWritable = true, bool privateOnly = false) const
+  {
+    return Scan(ParsePattern(aob), requireWritable, privateOnly);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Finds every 8-byte aligned slot holding a pointer to ANY of `targets`,
+  // in a single pass. Returns target -> referencing addresses (ascending).
+  // ---------------------------------------------------------------------------
+  std::unordered_map<uintptr_t, std::vector<uintptr_t>>
+  FindPointerRefs(std::vector<uintptr_t> targets, bool requireWritable = true, bool privateOnly = false) const
+  {
+    std::unordered_map<uintptr_t, std::vector<uintptr_t>> refs;
+
+    targets.erase(std::remove(targets.begin(), targets.end(), (uintptr_t) 0), targets.end());
+    std::sort(targets.begin(), targets.end());
+    targets.erase(std::unique(targets.begin(), targets.end()), targets.end());
+    if (targets.empty())
+      return refs;
+
+    const uint64_t lo   = targets.front();
+    const uint64_t hi   = targets.back();
+    auto           hits = ScanAligned(
+      [&targets, lo, hi](const uint8_t* p) {
+        uint64_t v = LoadU64(p);
+        if (v < lo || v > hi)
+          return false;
+        return std::binary_search(targets.begin(), targets.end(), (uintptr_t) v);
+      },
+      8, requireWritable, privateOnly
+    );
+
+    // Hits are sorted, so each per-target list stays in ascending order.
+    for (uintptr_t hit : hits) {
+      auto v = m_mem.ReadPointer(hit);
+      if (v && std::binary_search(targets.begin(), targets.end(), *v))
+        refs[*v].push_back(hit);
     }
-    return hits;
+    return refs;
   }
 
   // Scans memory for an ObscuredLong with a specific decrypted value
   std::vector<uintptr_t> ScanObscuredLong(int64_t targetValue) const
   {
-    std::vector<uintptr_t> hits;
-    auto                   regions = m_mem.EnumerateRegions(true);
-
-    size_t maxRegionSize           = 0;
-    for (const auto& mbi : regions) {
-      if (mbi.RegionSize > maxRegionSize && mbi.RegionSize <= (256ull * 1024 * 1024))
-        maxRegionSize = mbi.RegionSize;
-    }
-    if (maxRegionSize == 0)
-      return hits;
-
-    std::unique_ptr<uint8_t[]> buf(new uint8_t[maxRegionSize]);
-
-    for (const auto& mbi : regions) {
-      size_t regionSize = mbi.RegionSize;
-      if (regionSize == 0 || regionSize > maxRegionSize)
-        continue;
-
-      SIZE_T bytesRead = 0;
-      if (!ReadProcessMemory(m_mem.Handle(), mbi.BaseAddress, buf.get(), regionSize, &bytesRead) || bytesRead == 0) {
-        continue;
-      }
-
-      if (bytesRead < 24)
-        continue;
-
-      for (size_t i = 8; i + 24 <= bytesRead; i += 8) {
-        int64_t hidden;
-        int64_t key;
-        std::memcpy(&hidden, &buf[i], sizeof(int64_t));
-        std::memcpy(&key, &buf[i + 8], sizeof(int64_t));
-
+    // Window starts 8 bytes before the hidden value (realHash lives there):
+    //   [p+0] realHash | [p+8] hidden | [p+16] key | [p+24] fakeValue
+    auto hits = ScanAligned(
+      [targetValue](const uint8_t* p) {
+        int64_t hidden    = (int64_t) LoadU64(p + 8);
+        int64_t key       = (int64_t) LoadU64(p + 16);
         int64_t decrypted = key ^ hidden;
-        if (std::abs(decrypted - targetValue) <= 5000) {
-          int32_t realHash;
-          int64_t fakeValue;
-          std::memcpy(&realHash, &buf[i - 8], sizeof(int32_t));
-          std::memcpy(&fakeValue, &buf[i + 16], sizeof(int64_t));
-          int32_t calcHash = (int32_t) (targetValue ^ (targetValue >> 32));
-          printf(
-            "[DEBUG] Found ObscuredLong! target: %lld, found: %lld, fakeValue: %lld, realHash: "
-            "%08X, calcHash: %08X\n",
-            (long long) targetValue, (long long) decrypted, (long long) fakeValue, realHash, calcHash
-          );
+        if (std::abs(decrypted - targetValue) > 5000)
+          return false;
 
-          hits.push_back((uintptr_t) mbi.BaseAddress + i);
-        }
-      }
-    }
+        int32_t realHash  = (int32_t) LoadU32(p);
+        int64_t fakeValue = (int64_t) LoadU64(p + 24);
+        int32_t calcHash  = (int32_t) (targetValue ^ (targetValue >> 32));
+        printf(
+          "[DEBUG] Found ObscuredLong! target: %lld, found: %lld, fakeValue: %lld, realHash: "
+          "%08X, calcHash: %08X\n",
+          (long long) targetValue, (long long) decrypted, (long long) fakeValue, realHash, calcHash
+        );
+        return true;
+      },
+      32, true
+    );
+
+    for (auto& h : hits)
+      h += 8;  // report the address of hiddenValue (same as before)
     return hits;
   }
 
   // Scans memory for an ObscuredDouble with a specific decrypted value
   std::vector<uintptr_t> ScanObscuredDouble(double targetValue) const
   {
-    std::vector<uintptr_t> hits;
-    auto                   regions = m_mem.EnumerateRegions(true);
-
-    size_t maxRegionSize           = 0;
-    for (const auto& mbi : regions) {
-      if (mbi.RegionSize > maxRegionSize && mbi.RegionSize <= (256ull * 1024 * 1024))
-        maxRegionSize = mbi.RegionSize;
-    }
-    if (maxRegionSize == 0)
-      return hits;
-
-    std::unique_ptr<uint8_t[]> buf(new uint8_t[maxRegionSize]);
-
-    for (const auto& mbi : regions) {
-      size_t regionSize = mbi.RegionSize;
-      if (regionSize == 0 || regionSize > maxRegionSize)
-        continue;
-
-      SIZE_T bytesRead = 0;
-      if (!ReadProcessMemory(m_mem.Handle(), mbi.BaseAddress, buf.get(), regionSize, &bytesRead) || bytesRead == 0) {
-        continue;
-      }
-
-      if (bytesRead < 24)
-        continue;
-
-      for (size_t i = 0; i + 24 <= bytesRead; i += 8) {
-        int64_t hidden;
-        int64_t key;
-        std::memcpy(&hidden, &buf[i], sizeof(int64_t));
-        std::memcpy(&key, &buf[i + 8], sizeof(int64_t));
-
-        int64_t decryptedBits = key ^ hidden;
-        double  decryptedDouble;
+    return ScanAligned(
+      [targetValue](const uint8_t* p) {
+        uint64_t decryptedBits = LoadU64(p + 8) ^ LoadU64(p);
+        double   decryptedDouble;
         std::memcpy(&decryptedDouble, &decryptedBits, sizeof(double));
-
-        if (std::abs(decryptedDouble - targetValue) < 2.0) {
-          hits.push_back((uintptr_t) mbi.BaseAddress + i);
-        }
-      }
-    }
-    return hits;
-  }
-
-  std::vector<uintptr_t> Scan(const std::string& aob, bool requireWritable = true) const
-  {
-    return Scan(ParsePattern(aob), requireWritable);
+        return std::abs(decryptedDouble - targetValue) < 2.0;
+      },
+      24, true
+    );
   }
 
   // ---------------------------------------------------------------------------
-  // Fast parallel scan over 8-byte aligned slots.
+  // Parallel scan over 8-byte aligned slots.
   //
   // IL2CPP heap objects (and every pointer field inside them) are 8-byte
   // aligned, so visiting only aligned slots is lossless for object/pointer
-  // searches while being far cheaper than a byte-by-byte AOB walk.
-  //
-  //  - Memory is read in fixed-size chunks (no giant per-region buffers, and an
-  //    unreadable page only loses one chunk instead of a whole region).
-  //  - Chunks are distributed across worker threads.
-  //  - `pred(const uint8_t* p)` is called for every aligned slot that has at
-  //    least `windowSize` valid bytes at `p`; return true to record a hit.
-  //    It runs concurrently on several threads, so it must be read-only.
-  //  - One pass can match many targets at once (put them all in `pred`).
-  //
-  // Returned hits are sorted ascending (same order as the sequential Scan()).
+  // searches while being far cheaper than a byte-by-byte walk.
   // ---------------------------------------------------------------------------
   template<typename Pred>
   std::vector<uintptr_t>
   ScanAligned(Pred pred, size_t windowSize, bool requireWritable = true, bool privateOnly = false) const
   {
-    constexpr size_t kAlign     = 8;
+    return ScanStrided(pred, windowSize, 8, requireWritable, privateOnly);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Core scan engine.
+  //
+  //  - `pred(const uint8_t* p)` is called for every slot (every `stride` bytes
+  //    from a region start) that has at least `windowSize` valid bytes at `p`;
+  //    return true to record a hit. It runs concurrently on several threads,
+  //    so it must be read-only.
+  //  - `stride` must divide the page size (1, 2, 4 or 8).
+  //
+  // Returned hits are sorted ascending (same order as a sequential walk).
+  // ---------------------------------------------------------------------------
+  template<typename Pred>
+  std::vector<uintptr_t>
+  ScanStrided(Pred pred, size_t windowSize, size_t stride, bool requireWritable = true, bool privateOnly = false) const
+  {
     constexpr size_t kChunkSize = 1024 * 1024;
-    constexpr size_t kMaxRegion = 256ull * 1024 * 1024;  // same cap as Scan()
+    constexpr size_t kMaxRegion = 256ull * 1024 * 1024;  // skip absurd regions
 
     std::vector<uintptr_t> hits;
-    if (windowSize == 0)
+    if (windowSize == 0 || stride == 0)
       return hits;
 
     struct Chunk
@@ -252,7 +240,7 @@ public:
     for (const auto& mbi : m_mem.EnumerateRegions(requireWritable, privateOnly)) {
       if (mbi.RegionSize == 0 || mbi.RegionSize > kMaxRegion)
         continue;
-      uintptr_t regionBase = (uintptr_t) mbi.BaseAddress;  // page aligned -> slots stay 8-aligned
+      uintptr_t regionBase = (uintptr_t) mbi.BaseAddress;  // page aligned -> slots stay aligned
       uintptr_t regionEnd  = regionBase + mbi.RegionSize;
       for (uintptr_t base = regionBase; base < regionEnd; base += kChunkSize) {
         size_t scanLen = std::min<size_t>(kChunkSize, regionEnd - base);
@@ -284,7 +272,7 @@ public:
 
         const size_t   limit = std::min<size_t>(c.scanLen, bytesRead - windowSize + 1);
         const uint8_t* p     = buf.get();
-        for (size_t off = 0; off < limit; off += kAlign) {
+        for (size_t off = 0; off < limit; off += stride) {
           if (pred(p + off))
             localHits.push_back(c.base + off);
         }

@@ -9,11 +9,16 @@ ExpMultiplier::~ExpMultiplier() { }
 
 ExpMultiplier::Result ExpMultiplier::ApplyMaxExp(float multiplier)
 {
+  HeroFinder heroFinder(m_mem);
+  return ApplyMaxExp(heroFinder, multiplier);
+}
+
+ExpMultiplier::Result ExpMultiplier::ApplyMaxExp(HeroFinder& heroFinder, float multiplier)
+{
   if (!m_mem.IsAttached())
     return {false, "[Exp Multiplier] Not attached to game."};
 
-  HeroFinder heroFinder(m_mem);
-  auto       results = heroFinder.FindAll(true);
+  auto results = heroFinder.FindAll(true);
 
   if (results.empty())
     return {false, "[EXP Multiplier] Could not find Active Hero in memory. Enter a stage first."};

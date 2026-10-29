@@ -130,18 +130,3 @@ The project consists of two interacting components:
 | **Error 401** | `BadUnauthorizedException` during stage clear / cloud save | Sped-up `GetSystemTimeAsFileTime` advanced `DateTime.UtcNow` past the 24h JWT token lifetime. | Intercept only `UnityPlayer.dll` in `speedhack.cpp`; do not hook calendar APIs. | [error_401_speedhack_analysis.md](../resources/docs/error_401_speedhack_analysis.md) |
 | **Error 0** | `ConnectionError` (No response from server) during box claiming | Sped-up QPC collapsed `UnityWebRequest` timeout window (5s passed in <250ms); backend rate-limited rapid requests. | Lower speedhack to 1x–3x during batch box claims; patch `StageBoxRequestAbuseGuard.hug`. | [error_0_connection_error_analysis.md](../resources/docs/error_0_connection_error_analysis.md) |
 | **Corrupted Rune Data** | Rune scan succeeds quickly but displays wrong rune levels | Loosened dictionary validation or dropped dictionary key `0`. | Restore strict validation (`[248, 260]` and `validInnerCount == 5`). | [PlayerDataFinder.cpp](../src/scanner/PlayerDataFinder.cpp) |
-
-
-## ToDo
-
-- [x] Deep analysis of anti-cheat architecture (CodeStage ACTk v6.8.0, custom application guards, and BACKND cloud security). Documented in [anticheat_deep_analysis.md](../resources/docs/anticheat_deep_analysis.md).
-
-- [x] Upgraded [AntiCheatBypass.h](../src/features/AntiCheatBypass.h) to multi-tier architecture with automatic background patching, master dispatch kill-switch, and non-destructive restoration.
-
-- [x] Refactored dependency model: replaced vcpkg with self-contained `vendor/` tree (`minhook`, `imgui`, `glfw`), renamed `vcpkg.json` to `config.json`.
-
-- [x] Expanded  AOB signature engine with dynamic runtime scanning and fallback RVAs across all 22 game and anticheat targets ([Signatures.h](../src/core/Signatures.h), [aobgenerator.py](../resources/tools/aobgenerator.py)).
-
-- [x] Centralized all struct field offsets and IL2CPP container layouts in [Il2CppOffsets.h](../src/core/Il2CppOffsets.h) and removed decentralized duplicate offsets from readers.
-
-- [x] Upgraded update workflow ([update.md](workflows/update.md)) and unified runner ([scripts/update](../scripts/update) & [updater.py](../resources/tools/updater.py)) with 100% clean verification.
